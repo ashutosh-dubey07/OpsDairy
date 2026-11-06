@@ -1,0 +1,112 @@
+[
+  {
+    "case_id": "checkout-mixed-hinglish",
+    "transcript": "Checkout API production mein deploy v2.8.1 ke baad 5xx errors aa rahe hain aur checkout slow chal raha hai; kuch users payments complete nahi paa rahe.",
+    "expected": {
+      "service_id": "checkout-api",
+      "environment": "production",
+      "severity": null,
+      "symptoms": ["http_5xx", "latency", "payment_failures"],
+      "deployment_reference": "v2.8.1"
+    }
+  },
+  {
+    "case_id": "auth-staging-p2",
+    "transcript": "Auth API staging mein P2 incident hai: login fail ho rahe hain aur 401 errors aa rahe hain after release v1.4.2.",
+    "expected": {
+      "service_id": "auth-api",
+      "environment": "staging",
+      "severity": "SEV2",
+      "symptoms": ["auth_failures"],
+      "deployment_reference": "v1.4.2"
+    }
+  },
+  {
+    "case_id": "search-development-queue",
+    "transcript": "Search API dev mein P3 issue hai; queue backlog steadily badh raha hai.",
+    "expected": {
+      "service_id": "search-api",
+      "environment": "development",
+      "severity": "SEV3",
+      "symptoms": ["queue_backlog"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "catalog-database-pool",
+    "transcript": "Catalog API production mein database connection pool exhausted hai, too many connections aa rahe hain.",
+    "expected": {
+      "service_id": "catalog-api",
+      "environment": "production",
+      "severity": null,
+      "symptoms": ["db_pool_exhaustion"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "checkout-timeouts-release",
+    "transcript": "Checkout production requests time out ho rahe hain; deployment v2.9.0 ke baad start hua.",
+    "expected": {
+      "service_id": "checkout-api",
+      "environment": "production",
+      "severity": null,
+      "symptoms": ["timeouts"],
+      "deployment_reference": "v2.9.0"
+    }
+  },
+  {
+    "case_id": "login-service-auth",
+    "transcript": "Login service staging par sev1 authentication errors aa rahe hain.",
+    "expected": {
+      "service_id": "auth-api",
+      "environment": "staging",
+      "severity": "SEV1",
+      "symptoms": ["auth_failures"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "search-latency",
+    "transcript": "Search API staging responses mein latency high hai aur users ko delay mil raha hai.",
+    "expected": {
+      "service_id": "search-api",
+      "environment": "staging",
+      "severity": null,
+      "symptoms": ["latency"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "unknown-service-no-symptom",
+    "transcript": "Legacy worker production mein unavailable hai.",
+    "expected": {
+      "service_id": null,
+      "environment": "production",
+      "severity": null,
+      "symptoms": [],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "catalog-checkout-decline",
+    "transcript": "Catalog API dev mein 5xx errors aur payment decline reports mil rahi hain.",
+    "expected": {
+      "service_id": "catalog-api",
+      "environment": "development",
+      "severity": null,
+      "symptoms": ["http_5xx", "payment_failures"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "checkout-laggy-unknown-environment",
+    "transcript": "Checkout laggy hai; response dheere aa raha hai.",
+    "expected": {
+      "service_id": "checkout-api",
+      "environment": null,
+      "severity": null,
+      "symptoms": ["latency"],
+      "deployment_reference": null
+    }
+  }
+]

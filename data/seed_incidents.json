@@ -1,0 +1,62 @@
+[
+  {
+    "incident_id": "SYN-1041",
+    "days_ago": 2,
+    "transcript": "Checkout API prod mein deploy v2.8.1 ke baad 5xx errors aaye aur kuch payments fail ho gaye. Users checkout complete nahi kar paa rahe the.",
+    "service_id": "checkout-api",
+    "environment": "production",
+    "severity": "SEV2",
+    "symptoms": ["http_5xx", "payment_failures"],
+    "impact_summary": "Some users could not complete checkout.",
+    "deployment_reference": "v2.8.1",
+    "deployment_id": "DEP-CHK-281"
+  },
+  {
+    "incident_id": "SYN-1038",
+    "days_ago": 4,
+    "transcript": "Checkout prod slow chal raha tha, requests timeout ho rahi thi; kuch payments complete nahi ho rahe the.",
+    "service_id": "checkout-api",
+    "environment": "production",
+    "severity": "SEV3",
+    "symptoms": ["latency", "timeouts", "payment_failures"],
+    "impact_summary": "Some payments did not complete.",
+    "deployment_reference": null,
+    "deployment_id": "DEP-CHK-280"
+  },
+  {
+    "incident_id": "SYN-1034",
+    "days_ago": 7,
+    "transcript": "Auth API production mein login failures aur 401 errors dikhe. Existing sessions kuch users ke liye refresh nahi ho rahe the.",
+    "service_id": "auth-api",
+    "environment": "production",
+    "severity": "SEV2",
+    "symptoms": ["auth_failures"],
+    "impact_summary": "Some users could not refresh their sessions.",
+    "deployment_reference": null,
+    "deployment_id": "DEP-AUTH-143"
+  },
+  {
+    "incident_id": "SYN-1029",
+    "days_ago": 10,
+    "transcript": "Search API prod mein high latency thi aur search results dheere aa rahe the.",
+    "service_id": "search-api",
+    "environment": "production",
+    "severity": "SEV3",
+    "symptoms": ["latency"],
+    "impact_summary": "Search results were delayed.",
+    "deployment_reference": null,
+    "deployment_id": "DEP-SRCH-562"
+  },
+  {
+    "incident_id": "SYN-1021",
+    "days_ago": 16,
+    "transcript": "Checkout production mein 500 errors ke saath payment errors aaye, rollback ke baad requests recover hue.",
+    "service_id": "checkout-api",
+    "environment": "production",
+    "severity": "SEV2",
+    "symptoms": ["http_5xx", "payment_failures"],
+    "impact_summary": "Payment requests recovered after rollback.",
+    "deployment_reference": null,
+    "deployment_id": "DEP-CHK-280"
+  }
+]

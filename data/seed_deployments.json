@@ -1,0 +1,47 @@
+[
+  {
+    "deployment_id": "DEP-CHK-281",
+    "service_id": "checkout-api",
+    "environment": "production",
+    "version": "v2.8.1",
+    "commit_sha": "a12bc34",
+    "hours_ago": 26,
+    "change_summary": "Synthetic checkout retry and connection-pool change."
+  },
+  {
+    "deployment_id": "DEP-CHK-280",
+    "service_id": "checkout-api",
+    "environment": "production",
+    "version": "v2.8.0",
+    "commit_sha": "b87de21",
+    "hours_ago": 91,
+    "change_summary": "Synthetic cart validation update."
+  },
+  {
+    "deployment_id": "DEP-AUTH-143",
+    "service_id": "auth-api",
+    "environment": "production",
+    "version": "v1.4.3",
+    "commit_sha": "c42ef91",
+    "hours_ago": 40,
+    "change_summary": "Synthetic session refresh update."
+  },
+  {
+    "deployment_id": "DEP-SRCH-562",
+    "service_id": "search-api",
+    "environment": "production",
+    "version": "v5.6.2",
+    "commit_sha": "d91aa06",
+    "hours_ago": 58,
+    "change_summary": "Synthetic index query optimization."
+  },
+  {
+    "deployment_id": "DEP-CAT-317",
+    "service_id": "catalog-api",
+    "environment": "staging",
+    "version": "v3.1.7-rc1",
+    "commit_sha": "ef23b10",
+    "hours_ago": 13,
+    "change_summary": "Synthetic catalog cache experiment."
+  }
+]

@@ -1,0 +1,34 @@
+[
+  {
+    "service_id": "checkout-api",
+    "name": "Checkout API",
+    "owner": "Payments Platform",
+    "repository": "synthetic/checkout-api",
+    "criticality": "Tier 1",
+    "aliases": ["checkout", "checkout api", "checkout-api"]
+  },
+  {
+    "service_id": "auth-api",
+    "name": "Auth API",
+    "owner": "Identity Team",
+    "repository": "synthetic/auth-api",
+    "criticality": "Tier 1",
+    "aliases": ["auth", "auth api", "auth-api", "login service"]
+  },
+  {
+    "service_id": "search-api",
+    "name": "Search API",
+    "owner": "Discovery Team",
+    "repository": "synthetic/search-api",
+    "criticality": "Tier 2",
+    "aliases": ["search", "search api", "search-api"]
+  },
+  {
+    "service_id": "catalog-api",
+    "name": "Catalog API",
+    "owner": "Commerce Core",
+    "repository": "synthetic/catalog-api",
+    "criticality": "Tier 2",
+    "aliases": ["catalog", "catalog api", "catalog-api"]
+  }
+]
