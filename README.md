@@ -2,6 +2,8 @@
 
 OpsDiary keeps incident notes, service context, and related history together for Hinglish-speaking SRE and on-call engineers. Demo records are synthetic. The app does not predict outages and is not production software.
 
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the layer map, trust boundaries, and current scope decisions.
+
 ## Run locally
 
 Requirements: Python 3.12 and `uv`.
@@ -44,6 +46,8 @@ The client uses Prisma v2.5 REST at `https://api.vachana.ai/stt/v3`; it sends `a
 ## Application workflow and quality gates
 
 The Streamlit page calls `IncidentWorkflow` for extraction, reviewed-field validation, persistence, and incident analysis. This keeps application rules independent of UI rendering. Unknown service IDs and symptom tags are rejected before persistence.
+
+Historical context uses SQLite FTS5 lexical retrieval, filtered by confirmed service and environment when available. Results include the source incident ID, matched terms, and transcript evidence excerpt. Structured JSON operational logs record trace ID, stage, outcome, latency, and provider metadata; they omit transcript text, audio bytes, and API keys.
 
 Run the synthetic extraction evaluation locally:
 

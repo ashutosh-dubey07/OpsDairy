@@ -5,7 +5,9 @@ from pathlib import Path
 
 from opsdiary.enrichment import enrich_incident
 from opsdiary.extraction import SYMPTOM_LABELS, extract_incident
+from opsdiary.observability import observed_stage, trace_scope
 from opsdiary.patterns import detect_patterns
+from opsdiary.retrieval import retrieve_incidents
 from opsdiary.reporting import build_incident_report
 from opsdiary.schema import IncidentDraft
 from opsdiary.settings import DATABASE_PATH
@@ -17,6 +19,7 @@ class IncidentAnalysis:
     incident: dict
     service_context: dict | None
     pattern_result: dict
+    related_records: list[dict]
     summary: str
     report: str
 
@@ -32,51 +35,92 @@ class IncidentWorkflow:
         }
         self.db_path = db_path
 
-    def extract_candidate(self, transcript: str) -> IncidentDraft:
-        return extract_incident(transcript, self.services)
+    def extract_candidate(
+        self, transcript: str, trace_id: str | None = None
+    ) -> IncidentDraft:
+        with trace_scope(trace_id) as active_trace_id:
+            with observed_stage("incident.extract"):
+                draft = extract_incident(transcript, self.services)
+            return draft.model_copy(update={"trace_id": active_trace_id})
 
     def save_reviewed(self, draft_data: IncidentDraft | dict, source: str) -> str:
         """Validate reviewed fields at the application boundary before persistence."""
-        draft = (
-            draft_data
+        supplied_trace_id = (
+            draft_data.trace_id
             if isinstance(draft_data, IncidentDraft)
-            else IncidentDraft.model_validate(draft_data)
+            else draft_data.get("trace_id")
         )
-        if draft.service_id and draft.service_id not in self.service_ids:
-            raise ValueError(f"Unknown service: {draft.service_id}")
-        unknown_symptoms = set(draft.symptoms) - set(SYMPTOM_LABELS)
-        if unknown_symptoms:
-            raise ValueError("Unknown symptom tags: " + ", ".join(sorted(unknown_symptoms)))
-        return save_incident(
-            draft.model_dump(mode="json"),
-            db_path=self.db_path,
-            source=source,
-        )
+        with trace_scope(supplied_trace_id) as active_trace_id:
+            metadata = {"source": source}
+            with observed_stage("incident.save", metadata=metadata):
+                draft = (
+                    draft_data
+                    if isinstance(draft_data, IncidentDraft)
+                    else IncidentDraft.model_validate(draft_data)
+                )
+                if draft.service_id and draft.service_id not in self.service_ids:
+                    raise ValueError(f"Unknown service: {draft.service_id}")
+                unknown_symptoms = set(draft.symptoms) - set(SYMPTOM_LABELS)
+                if unknown_symptoms:
+                    raise ValueError(
+                        "Unknown symptom tags: " + ", ".join(sorted(unknown_symptoms))
+                    )
+                draft = draft.model_copy(update={"trace_id": active_trace_id})
+                incident_id = save_incident(
+                    draft.model_dump(mode="json"),
+                    db_path=self.db_path,
+                    source=source,
+                )
+                metadata["incident_id"] = incident_id
+                return incident_id
 
     def analyze(self, incident_id: str) -> IncidentAnalysis | None:
         incident = get_incident(incident_id, db_path=self.db_path)
         if not incident:
             return None
-        service_context = enrich_incident(
-            incident.get("service_id"),
-            incident.get("environment"),
-            db_path=self.db_path,
-            deployment_reference=incident.get("deployment_reference"),
-        )
-        pattern_result = detect_patterns(
-            incident.get("service_id"),
-            incident.get("environment"),
-            incident.get("symptoms", []),
-            as_of=incident.get("created_at"),
-            db_path=self.db_path,
-        )
-        return IncidentAnalysis(
-            incident=incident,
-            service_context=service_context,
-            pattern_result=pattern_result,
-            summary=self._summary(incident),
-            report=build_incident_report(incident, service_context, pattern_result),
-        )
+        saved_trace_id = incident.get("extraction", {}).get("trace_id")
+        with trace_scope(saved_trace_id):
+            with observed_stage("incident.analysis", incident_id=incident_id):
+                service_context = enrich_incident(
+                    incident.get("service_id"),
+                    incident.get("environment"),
+                    db_path=self.db_path,
+                    deployment_reference=incident.get("deployment_reference"),
+                )
+                pattern_result = detect_patterns(
+                    incident.get("service_id"),
+                    incident.get("environment"),
+                    incident.get("symptoms", []),
+                    as_of=incident.get("created_at"),
+                    db_path=self.db_path,
+                )
+                exact_match_ids = {
+                    match["incident_id"] for match in pattern_result["matches"]
+                }
+                with observed_stage("context.retrieve", incident_id=incident_id):
+                    related_records = retrieve_incidents(
+                        incident.get("transcript", ""),
+                        service_id=incident.get("service_id"),
+                        environment=incident.get("environment"),
+                        exclude_incident_id=incident_id,
+                        limit=5,
+                        db_path=self.db_path,
+                    )
+                related_records = [
+                    record for record in related_records
+                    if record["incident_id"] not in exact_match_ids
+                ]
+                report = build_incident_report(
+                    incident, service_context, pattern_result, related_records
+                )
+                return IncidentAnalysis(
+                    incident=incident,
+                    service_context=service_context,
+                    pattern_result=pattern_result,
+                    related_records=related_records,
+                    summary=self._summary(incident),
+                    report=report,
+                )
 
     def _summary(self, incident: dict) -> str:
         service_name = self.service_names.get(incident.get("service_id"), "Unknown service")

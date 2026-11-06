@@ -87,6 +87,25 @@ class IncidentWorkflowTests(unittest.TestCase):
         )
         self.assertIn("no exact deployment version matched", analysis.report)
 
+    def test_analysis_includes_lexical_history_with_source_evidence(self) -> None:
+        draft = IncidentDraft(
+            transcript="Checkout production checkout complete flow is degraded after a synthetic change.",
+            service_id="checkout-api",
+            environment="production",
+        )
+
+        incident_id = self.workflow.save_reviewed(draft, source="local-demo")
+        analysis = self.workflow.analyze(incident_id)
+
+        self.assertIsNotNone(analysis)
+        assert analysis is not None
+        self.assertTrue(analysis.related_records)
+        self.assertTrue(
+            all(record["incident_id"].startswith("SYN-") for record in analysis.related_records)
+        )
+        self.assertTrue(all(record["evidence_excerpt"] for record in analysis.related_records))
+        self.assertIn("Additional transcript search evidence", analysis.report)
+
     def test_unknown_service_is_rejected_before_persistence(self) -> None:
         draft = IncidentDraft(transcript="Synthetic incident", service_id="unknown-service")
 

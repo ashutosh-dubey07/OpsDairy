@@ -11,6 +11,7 @@ def build_incident_report(
     incident: dict,
     service: dict | None,
     pattern_result: dict,
+    related_records: list[dict] | None = None,
 ) -> str:
     service_name = service.get("name") if service else "Unknown"
     symptom_labels = [SYMPTOM_LABELS.get(tag, tag) for tag in incident.get("symptoms", [])]
@@ -95,6 +96,28 @@ def build_incident_report(
                 lines.append(f"\nLinked deployment: {match['deployment_id']}")
     else:
         lines.append("No prior records matched the selected service, environment, and symptoms.")
+
+    lines.extend(["", "## Additional transcript search evidence", ""])
+    if related_records:
+        lines.append(
+            "These records were retrieved by lexical transcript search. They are supporting "
+            "references, not confirmation of a shared cause."
+        )
+        for record in related_records:
+            matched_terms = ", ".join(record.get("matched_terms", [])) or "text match"
+            lines.extend(
+                [
+                    "",
+                    f"### {record['incident_id']} - {record['created_at']} UTC",
+                    f"Matched terms: {matched_terms}",
+                    "",
+                    _quote(record.get("evidence_excerpt") or record.get("transcript", "")),
+                ]
+            )
+            if record.get("deployment_id"):
+                lines.append(f"\nCatalog deployment: {record['deployment_id']}")
+    else:
+        lines.append("No additional transcript search matches were found.")
 
     lines.extend(
         [

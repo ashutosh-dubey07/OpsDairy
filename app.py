@@ -10,6 +10,7 @@ from opsdiary.gnani_client import (
     transcribe_prisma_v25,
     validate_wav_duration,
 )
+from opsdiary.observability import new_trace_id, observed_stage, trace_scope
 from opsdiary.schema import IncidentDraft
 from opsdiary.settings import GNANI_API_KEY
 from opsdiary.workflow import IncidentWorkflow
@@ -100,6 +101,20 @@ def render_pattern_evidence(result: dict) -> None:
             st.caption(f"Deployment: {match['deployment_id']}")
 
 
+def render_related_records(records: list[dict]) -> None:
+    st.markdown("**Additional transcript matches**")
+    if not records:
+        st.caption("No additional lexical matches in saved incident transcripts.")
+        return
+    st.caption("Text search evidence only; a shared cause is not confirmed.")
+    for record in records:
+        terms = ", ".join(record.get("matched_terms", [])) or "text match"
+        st.markdown(f"**{record['incident_id']}** - {record['created_at']} UTC - {terms}")
+        st.caption(record.get("evidence_excerpt") or record["transcript"])
+        if record.get("deployment_id"):
+            st.caption(f"Catalog deployment: {record['deployment_id']}")
+
+
 def render_speech_controls(incident: dict, summary: str, location: str) -> None:
     """TTS runs only after an explicit click and stays in session memory."""
     if not GNANI_API_KEY:
@@ -107,8 +122,18 @@ def render_speech_controls(incident: dict, summary: str, location: str) -> None:
     audio_state_key = f"tts_audio_{incident['incident_id']}"
     if st.button("Speak summary", key=f"speak_{location}_{incident['incident_id']}"):
         try:
-            with st.spinner("Generating speech..."):
-                audio_bytes = synthesize_timbre_v25(summary)
+            metadata: dict = {}
+            trace_id = incident.get("extraction", {}).get("trace_id")
+            with trace_scope(trace_id):
+                with st.spinner("Generating speech..."):
+                    with observed_stage(
+                        "voice.tts",
+                        incident_id=incident["incident_id"],
+                        provider="gnani-timbre-v2.5",
+                        metadata=metadata,
+                    ):
+                        audio_bytes = synthesize_timbre_v25(summary)
+                        metadata["output_bytes"] = len(audio_bytes)
             st.session_state[audio_state_key] = audio_bytes
         except (GnaniAPIError, GnaniConfigurationError, ValueError) as exc:
             st.error(f"TTS request failed: {exc}")
@@ -150,6 +175,7 @@ def render_incident_result(incident_id: str, allow_tts: bool = False) -> None:
     render_enrichment(analysis.service_context)
     st.markdown("**Historical matches**")
     render_pattern_evidence(analysis.pattern_result)
+    render_related_records(analysis.related_records)
     if allow_tts:
         render_speech_controls(incident, analysis.summary, "result")
     render_report_download(incident, analysis.report, "result")
@@ -221,6 +247,7 @@ def render_review_form(
                 impact_summary=selected_impact.strip() or None,
                 deployment_reference=selected_deployment_ref.strip() or None,
                 evidence=evidence,
+                trace_id=draft_data.get("trace_id"),
             )
             incident_id = workflow.save_reviewed(reviewed, source=source)
             st.session_state[f"saved_incident_{widget_prefix}"] = incident_id
@@ -259,7 +286,7 @@ def render_demo_capture() -> None:
     )
     if st.button("Extract fields", key="demo_extract"):
         try:
-            draft = workflow.extract_candidate(transcript_text)
+            draft = workflow.extract_candidate(transcript_text, trace_id=new_trace_id())
             st.session_state["incident_draft_demo"] = draft.model_dump(mode="json")
         except ValueError as exc:
             st.error(str(exc))
@@ -291,16 +318,26 @@ def render_live_capture() -> None:
             duration = validate_wav_duration(audio_bytes, max_seconds=30)
             filename = getattr(audio_file, "name", "incident.wav") or "incident.wav"
             content_type = getattr(audio_file, "type", None) or "audio/wav"
-            with st.spinner(f"Transcribing {duration:.1f}-second clip..."):
-                response = transcribe_prisma_v25(
-                    audio_bytes,
-                    filename=filename,
-                    content_type=content_type,
-                )
+            trace_id = new_trace_id()
+            metadata: dict = {"audio_bytes": len(audio_bytes)}
+            with trace_scope(trace_id):
+                with st.spinner(f"Transcribing {duration:.1f}-second clip..."):
+                    with observed_stage(
+                        "voice.stt",
+                        provider="gnani-prisma-v2.5",
+                        metadata=metadata,
+                    ):
+                        response = transcribe_prisma_v25(
+                            audio_bytes,
+                            filename=filename,
+                            content_type=content_type,
+                        )
+                        metadata["request_id"] = response.get("request_id")
             st.session_state["live_transcript_editor"] = response.get("transcript", "")
             st.session_state["live_transcription_info"] = {
                 "model": response.get("model", "prisma-v2.5"),
                 "request_id": response.get("request_id"),
+                "trace_id": trace_id,
             }
             st.session_state.pop("incident_draft_live", None)
             st.session_state.pop("saved_incident_live", None)
@@ -320,7 +357,10 @@ def render_live_capture() -> None:
         )
         if st.button("Extract fields", key="live_extract"):
             try:
-                draft = workflow.extract_candidate(reviewed_transcript)
+                draft = workflow.extract_candidate(
+                    reviewed_transcript,
+                    trace_id=transcription_info.get("trace_id") or new_trace_id(),
+                )
                 st.session_state["incident_draft_live"] = draft.model_dump(mode="json")
             except ValueError as exc:
                 st.error(str(exc))
@@ -414,6 +454,7 @@ with history_tab:
                 render_enrichment(analysis.service_context)
                 st.markdown("**Historical matches**")
                 render_pattern_evidence(analysis.pattern_result)
+                render_related_records(analysis.related_records)
                 if mode == "Live":
                     render_speech_controls(selected_incident, analysis.summary, "history")
                 render_report_download(selected_incident, analysis.report, "history")

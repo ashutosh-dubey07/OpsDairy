@@ -75,9 +75,70 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
                 ON incidents(service_id, environment, created_at);
             CREATE INDEX IF NOT EXISTS deployments_service_time
                 ON deployments(service_id, environment, deployed_at);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS incident_search USING fts5(
+                incident_id UNINDEXED,
+                transcript,
+                impact_summary,
+                service_id UNINDEXED,
+                environment UNINDEXED,
+                symptoms
+            );
+
+            CREATE TRIGGER IF NOT EXISTS incidents_search_insert
+            AFTER INSERT ON incidents BEGIN
+                INSERT INTO incident_search
+                    (incident_id, transcript, impact_summary, service_id, environment, symptoms)
+                VALUES (
+                    new.incident_id, new.transcript, COALESCE(new.impact_summary, ''),
+                    COALESCE(new.service_id, ''), COALESCE(new.environment, ''), new.symptoms_json
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS incidents_search_update
+            AFTER UPDATE ON incidents BEGIN
+                DELETE FROM incident_search WHERE incident_id = old.incident_id;
+                INSERT INTO incident_search
+                    (incident_id, transcript, impact_summary, service_id, environment, symptoms)
+                VALUES (
+                    new.incident_id, new.transcript, COALESCE(new.impact_summary, ''),
+                    COALESCE(new.service_id, ''), COALESCE(new.environment, ''), new.symptoms_json
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS incidents_search_delete
+            AFTER DELETE ON incidents BEGIN
+                DELETE FROM incident_search WHERE incident_id = old.incident_id;
+            END;
             """
         )
         _seed_synthetic_data(conn)
+        _backfill_incident_search(conn)
+
+
+def _backfill_incident_search(conn: sqlite3.Connection) -> None:
+    """Index existing local records when upgrading a database created by an older version."""
+    missing = conn.execute(
+        """SELECT i.incident_id, i.transcript, i.impact_summary, i.service_id,
+                  i.environment, i.symptoms_json
+           FROM incidents AS i
+           LEFT JOIN incident_search AS s ON s.incident_id = i.incident_id
+           WHERE s.incident_id IS NULL"""
+    ).fetchall()
+    if not missing:
+        return
+    conn.executemany(
+        """INSERT INTO incident_search
+           (incident_id, transcript, impact_summary, service_id, environment, symptoms)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                row["incident_id"], row["transcript"], row["impact_summary"] or "",
+                row["service_id"] or "", row["environment"] or "", row["symptoms_json"],
+            )
+            for row in missing
+        ],
+    )
 
 
 def _seed_synthetic_data(conn: sqlite3.Connection) -> None:
