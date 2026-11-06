@@ -33,8 +33,21 @@ def build_incident_report(
 
     if incident.get("impact_summary"):
         lines.extend(["", "## Impact note", "", incident["impact_summary"]])
-    if incident.get("deployment_reference"):
-        lines.extend(["", "## Deployment mentioned", "", incident["deployment_reference"]])
+    deployment_reference = incident.get("deployment_reference")
+    if deployment_reference:
+        lines.extend(["", "## Deployment reference verification", ""])
+        referenced = service.get("referenced_deployment") if service else None
+        if referenced:
+            lines.append(
+                f"Transcript version {deployment_reference} matched catalog deployment "
+                f"{referenced['deployment_id']} ({referenced['version']}, commit "
+                f"{referenced['commit_sha']})."
+            )
+        else:
+            lines.append(
+                f"Transcript mentions {deployment_reference}; no exact deployment version "
+                "matched this service and environment in the catalog."
+            )
 
     deployment = service.get("latest_deployment") if service else None
     lines.extend(["", "## Service and deployment context", ""])
@@ -47,11 +60,15 @@ def build_incident_report(
         lines.append("No service catalog match was confirmed.")
     if deployment:
         lines.append(
-            f"Latest seeded deployment: {deployment['version']} ({deployment['environment']}) "
+            f"Latest catalog deployment (context only): {deployment['version']} "
+            f"({deployment['environment']}) "
             f"at {deployment['deployed_at']} UTC; {deployment['deployment_id']}; "
             f"commit {deployment['commit_sha']}."
         )
-        lines.append(f"Change note: {deployment['change_summary']}")
+        lines.append(
+            "This record is not confirmation that the deployment caused the incident. "
+            f"Change note: {deployment['change_summary']}"
+        )
     else:
         lines.append("No deployment record matched this service and environment.")
 

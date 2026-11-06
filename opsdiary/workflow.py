@@ -61,6 +61,7 @@ class IncidentWorkflow:
             incident.get("service_id"),
             incident.get("environment"),
             db_path=self.db_path,
+            deployment_reference=incident.get("deployment_reference"),
         )
         pattern_result = detect_patterns(
             incident.get("service_id"),

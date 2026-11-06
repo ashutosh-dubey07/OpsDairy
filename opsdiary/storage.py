@@ -178,15 +178,20 @@ def save_incident(
     service_id = draft.get("service_id")
     environment = draft.get("environment")
     deployment_id = None
-    if service_id and environment:
+    deployment_reference = draft.get("deployment_reference")
+    if service_id and environment and deployment_reference:
         with connect(db_path) as conn:
-            deployment = conn.execute(
-                """SELECT deployment_id FROM deployments
+            deployments = conn.execute(
+                """SELECT deployment_id, version FROM deployments
                    WHERE service_id = ? AND environment = ?
-                   ORDER BY deployed_at DESC LIMIT 1""",
+                   ORDER BY deployed_at DESC""",
                 (service_id, environment),
-            ).fetchone()
-            deployment_id = deployment["deployment_id"] if deployment else None
+            ).fetchall()
+            expected_version = _normalize_version(deployment_reference)
+            for deployment in deployments:
+                if _normalize_version(deployment["version"]) == expected_version:
+                    deployment_id = deployment["deployment_id"]
+                    break
 
     with connect(db_path) as conn:
         conn.execute(
@@ -209,6 +214,7 @@ def get_service_enrichment(
     service_id: str | None,
     environment: str | None,
     db_path: Path | str = DATABASE_PATH,
+    deployment_reference: str | None = None,
 ) -> dict | None:
     if not service_id:
         return None
@@ -219,13 +225,37 @@ def get_service_enrichment(
         if not service:
             return None
         deployment = None
+        referenced_deployment = None
         if environment:
             deployment = conn.execute(
                 """SELECT * FROM deployments WHERE service_id = ? AND environment = ?
                    ORDER BY deployed_at DESC LIMIT 1""",
                 (service_id, environment),
             ).fetchone()
+            if deployment_reference:
+                versions = conn.execute(
+                    """SELECT * FROM deployments
+                       WHERE service_id = ? AND environment = ?
+                       ORDER BY deployed_at DESC""",
+                    (service_id, environment),
+                ).fetchall()
+                expected_version = _normalize_version(deployment_reference)
+                referenced_deployment = next(
+                    (
+                        row for row in versions
+                        if _normalize_version(row["version"]) == expected_version
+                    ),
+                    None,
+                )
     result = dict(service)
     result["aliases"] = json.loads(result.pop("aliases_json"))
     result["latest_deployment"] = dict(deployment) if deployment else None
+    result["deployment_reference"] = deployment_reference
+    result["referenced_deployment"] = (
+        dict(referenced_deployment) if referenced_deployment else None
+    )
     return result
+
+
+def _normalize_version(value: str) -> str:
+    return value.strip().casefold().removeprefix("v")

@@ -16,7 +16,7 @@ On first run, the app creates `data/opsdiary.sqlite3` and loads the synthetic se
 
 ## Demo mode
 
-Demo is the default and remains available without credentials. **Run sample incident** saves the built-in synthetic transcript and shows enrichment and historical matches in one step; it reuses the existing matching sample instead of creating duplicates. For the manual path, edit a synthetic Hinglish transcript, extract candidate fields, review them, and save. No audio is recorded or sent in Demo. History can be searched, and a selected incident can be downloaded as a Markdown brief with supporting records.
+Demo is the default and remains available without credentials. **Run sample incident** saves the built-in synthetic transcript and shows enrichment and historical matches in one step; it reuses the existing matching sample instead of creating duplicates. For the manual path, edit a synthetic Hinglish transcript, extract candidate fields, review them, and save. A deployment version from the transcript is linked only when the service, environment, and exact version match the synthetic catalog. The latest catalog deployment is shown separately as context, without claiming it caused the incident. No audio is recorded or sent in Demo. History can be searched, and a selected incident can be downloaded as a Markdown brief with supporting records.
 
 ## Live mode
 

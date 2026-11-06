@@ -44,15 +44,38 @@ def render_enrichment(result: dict | None) -> None:
         f"{result['name']} - {result['service_id']} - {result['owner']} - "
         f"{result['criticality']} - {result['repository']}"
     )
+    deployment_reference = result.get("deployment_reference")
+    referenced = result.get("referenced_deployment")
+    if deployment_reference:
+        if referenced:
+            st.markdown("**Transcript version match**")
+            st.write(
+                f"{referenced['version']} - {referenced['deployment_id']} - "
+                f"commit {referenced['commit_sha']} - {referenced['deployed_at']} UTC"
+            )
+            st.caption(referenced["change_summary"])
+        else:
+            st.caption(
+                f"Transcript mentions {deployment_reference}; no exact deployment version "
+                "matches this service and environment in the catalog."
+            )
+
     deployment = result.get("latest_deployment")
-    if deployment:
-        st.markdown("**Latest deployment**")
+    if deployment and not (
+        referenced and deployment["deployment_id"] == referenced["deployment_id"]
+    ):
+        st.markdown("**Latest catalog deployment**")
         st.write(
             f"{deployment['version']} - {deployment['environment']} - "
             f"{deployment['deployment_id']} - commit {deployment['commit_sha']} - "
             f"{deployment['deployed_at']} UTC"
         )
-        st.caption(deployment["change_summary"])
+        st.caption(
+            deployment["change_summary"]
+            + " This is catalog context, not confirmation that it caused the incident."
+        )
+    elif deployment and referenced:
+        st.caption("The verified transcript version is also the latest catalog deployment.")
     else:
         st.caption("No deployment is seeded for this service and environment.")
 
