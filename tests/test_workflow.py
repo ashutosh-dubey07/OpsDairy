@@ -33,6 +33,9 @@ class IncidentWorkflowTests(unittest.TestCase):
         self.assertIsNotNone(analysis)
         assert analysis is not None
         self.assertEqual(analysis.incident["severity"], "SEV2")
+        self.assertEqual(
+            analysis.incident["extraction"]["review_audit"]["changed_fields"], []
+        )
         self.assertEqual(analysis.incident["deployment_id"], "DEP-CHK-281")
         self.assertEqual(analysis.service_context["name"], "Checkout API")
         self.assertTrue(analysis.runbook_references)
@@ -109,6 +112,23 @@ class IncidentWorkflowTests(unittest.TestCase):
         )
         self.assertTrue(all(record["evidence_excerpt"] for record in analysis.related_records))
         self.assertIn("Additional transcript search evidence", analysis.report)
+
+    def test_operator_field_corrections_are_saved_as_review_evidence(self) -> None:
+        candidate = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
+        reviewed = candidate.model_copy(update={"severity": "SEV2"})
+
+        incident_id = self.workflow.save_reviewed(
+            reviewed, source="local-demo", candidate_data=candidate
+        )
+        incident = self.workflow.analyze(incident_id)
+
+        self.assertIsNotNone(incident)
+        assert incident is not None
+        audit = incident.incident["extraction"]["review_audit"]
+        self.assertEqual(audit["candidate_fields"]["severity"], None)
+        self.assertEqual(audit["confirmed_fields"]["severity"], "SEV2")
+        self.assertEqual(audit["changed_fields"], ["severity"])
+        self.assertIn("severity: not set -> SEV2", incident.report)
 
     def test_unknown_service_is_rejected_before_persistence(self) -> None:
         draft = IncidentDraft(transcript="Synthetic incident", service_id="unknown-service")

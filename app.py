@@ -135,6 +135,35 @@ def render_runbook_references(references: list[dict]) -> None:
         st.write(reference["body"])
 
 
+def render_review_audit(incident: dict) -> None:
+    audit = incident.get("extraction", {}).get("review_audit")
+    if not audit:
+        return
+    st.markdown("**Field corrections**")
+    changed_fields = audit.get("changed_fields", [])
+    if not changed_fields:
+        st.caption("No extracted fields changed during review.")
+        return
+    candidate = audit.get("candidate_fields", {})
+    confirmed = audit.get("confirmed_fields", {})
+    for field_name in changed_fields:
+        before = _format_review_value(field_name, candidate.get(field_name))
+        after = _format_review_value(field_name, confirmed.get(field_name))
+        st.write(f"{field_name.replace('_', ' ').title()}: {before} -> {after}")
+
+
+def _format_review_value(field_name: str, value: object) -> str:
+    if value is None or value == "" or value == []:
+        return "Not set"
+    if field_name == "service_id" and isinstance(value, str):
+        return service_by_id.get(value, {}).get("name", value)
+    if field_name == "symptoms" and isinstance(value, list):
+        return ", ".join(SYMPTOM_LABELS.get(tag, tag) for tag in value) or "Not set"
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
+
+
 def render_speech_controls(incident: dict, summary: str, location: str) -> None:
     """TTS runs only after an explicit click and stays in session memory."""
     if not GNANI_API_KEY:
@@ -192,6 +221,7 @@ def render_incident_result(incident_id: str, allow_tts: bool = False) -> None:
     if incident.get("deployment_reference"):
         st.caption("Transcript deployment reference: " + incident["deployment_reference"])
 
+    render_review_audit(incident)
     render_enrichment(analysis.service_context)
     st.markdown("**Historical matches**")
     render_pattern_evidence(analysis.pattern_result)
@@ -270,7 +300,9 @@ def render_review_form(
                 evidence=evidence,
                 trace_id=draft_data.get("trace_id"),
             )
-            incident_id = workflow.save_reviewed(reviewed, source=source)
+            incident_id = workflow.save_reviewed(
+                reviewed, source=source, candidate_data=draft_data
+            )
             st.session_state[f"saved_incident_{widget_prefix}"] = incident_id
             st.session_state.pop(draft_state_key, None)
             st.rerun()
@@ -294,7 +326,9 @@ def render_demo_capture() -> None:
             incident_id = existing["incident_id"]
         else:
             draft = workflow.extract_candidate(SAMPLE_TRANSCRIPT)
-            incident_id = workflow.save_reviewed(draft, source="local-demo")
+            incident_id = workflow.save_reviewed(
+                draft, source="local-demo", candidate_data=draft
+            )
         st.session_state["saved_incident_demo"] = incident_id
         st.session_state.pop("incident_draft_demo", None)
         st.rerun()
@@ -472,6 +506,7 @@ with history_tab:
                     "Symptoms: "
                     + (", ".join(SYMPTOM_LABELS.get(tag, tag) for tag in selected_incident["symptoms"]) or "none")
                 )
+                render_review_audit(selected_incident)
                 render_enrichment(analysis.service_context)
                 st.markdown("**Historical matches**")
                 render_pattern_evidence(analysis.pattern_result)

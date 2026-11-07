@@ -23,6 +23,7 @@ Streamlit capture/review
 | Provider adapter | Prisma v2.5 STT and Timbre v2.5 TTS in `opsdiary/gnani_client.py` | Keys come from environment; audio remains in session memory |
 | Application workflow | `IncidentWorkflow` owns extraction, save validation, enrichment, retrieval, and report assembly | UI delegates incident mutations and analysis to the workflow |
 | Incident schema | Pydantic fields, known-service/symptom checks, transcript evidence, trace ID | Unknown fields stay unset; the operator confirms candidate values |
+| Review feedback | SQLite stores extracted candidates, confirmed values, and the fields changed by the operator | Corrections are an audit/evaluation signal; they do not train or silently alter extraction |
 | Context | Service catalog and exact deployment-version match from SQLite | A latest deployment is labeled as context, not as incident cause |
 | Retrieval | Exact service/environment/symptom matching plus SQLite FTS5 search over incidents and bundled runbook examples | Results include incident IDs or runbook IDs, matched terms, and source evidence; runbooks require a confirmed service |
 | Persistence | SQLite incidents, services, deployments, synthetic runbooks, and FTS indexes | Seed records are synthetic; raw audio is not stored |

@@ -7,6 +7,16 @@ def _quote(text: str) -> str:
     return "\n".join(f"> {line}" for line in (text or "").splitlines())
 
 
+def _audit_value(value: object) -> str:
+    if value is None or value == "" or value == []:
+        return "not set"
+    if isinstance(value, list):
+        if value and all(item in SYMPTOM_LABELS for item in value):
+            return ", ".join(SYMPTOM_LABELS[item] for item in value)
+        return ", ".join(str(item) for item in value)
+    return str(value)
+
+
 def build_incident_report(
     incident: dict,
     service: dict | None,
@@ -35,6 +45,24 @@ def build_incident_report(
 
     if incident.get("impact_summary"):
         lines.extend(["", "## Impact note", "", incident["impact_summary"]])
+    review_audit = incident.get("extraction", {}).get("review_audit")
+    lines.extend(["", "## Extraction review", ""])
+    if review_audit:
+        lines.append(f"Review saved: {review_audit.get('saved_at', 'timestamp unavailable')} UTC.")
+        changed_fields = review_audit.get("changed_fields", [])
+        if changed_fields:
+            lines.append("Candidate values changed by the operator:")
+            candidate = review_audit.get("candidate_fields", {})
+            confirmed = review_audit.get("confirmed_fields", {})
+            for field_name in changed_fields:
+                lines.append(
+                    f"- {field_name}: {_audit_value(candidate.get(field_name))} -> "
+                    f"{_audit_value(confirmed.get(field_name))}"
+                )
+        else:
+            lines.append("No extracted field values changed during review.")
+    else:
+        lines.append("No extraction review audit is stored for this record.")
     deployment_reference = incident.get("deployment_reference")
     if deployment_reference:
         lines.extend(["", "## Deployment reference verification", ""])

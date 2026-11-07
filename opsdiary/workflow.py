@@ -44,7 +44,12 @@ class IncidentWorkflow:
                 draft = extract_incident(transcript, self.services)
             return draft.model_copy(update={"trace_id": active_trace_id})
 
-    def save_reviewed(self, draft_data: IncidentDraft | dict, source: str) -> str:
+    def save_reviewed(
+        self,
+        draft_data: IncidentDraft | dict,
+        source: str,
+        candidate_data: IncidentDraft | dict | None = None,
+    ) -> str:
         """Validate reviewed fields at the application boundary before persistence."""
         supplied_trace_id = (
             draft_data.trace_id
@@ -59,6 +64,15 @@ class IncidentWorkflow:
                     if isinstance(draft_data, IncidentDraft)
                     else IncidentDraft.model_validate(draft_data)
                 )
+                candidate = (
+                    draft
+                    if candidate_data is None
+                    else (
+                        candidate_data
+                        if isinstance(candidate_data, IncidentDraft)
+                        else IncidentDraft.model_validate(candidate_data)
+                    )
+                )
                 if draft.service_id and draft.service_id not in self.service_ids:
                     raise ValueError(f"Unknown service: {draft.service_id}")
                 unknown_symptoms = set(draft.symptoms) - set(SYMPTOM_LABELS)
@@ -67,10 +81,25 @@ class IncidentWorkflow:
                         "Unknown symptom tags: " + ", ".join(sorted(unknown_symptoms))
                     )
                 draft = draft.model_copy(update={"trace_id": active_trace_id})
+                fields = (
+                    "service_id", "environment", "severity", "symptoms",
+                    "impact_summary", "deployment_reference",
+                )
+                candidate_fields = candidate.model_dump(mode="json", include=set(fields))
+                confirmed_fields = draft.model_dump(mode="json", include=set(fields))
+                review_audit = {
+                    "candidate_fields": candidate_fields,
+                    "confirmed_fields": confirmed_fields,
+                    "changed_fields": [
+                        field for field in fields
+                        if candidate_fields[field] != confirmed_fields[field]
+                    ],
+                }
                 incident_id = save_incident(
                     draft.model_dump(mode="json"),
                     db_path=self.db_path,
                     source=source,
+                    review_audit=review_audit,
                 )
                 metadata["incident_id"] = incident_id
                 return incident_id

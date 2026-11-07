@@ -340,6 +340,7 @@ def save_incident(
     draft: dict,
     db_path: Path | str = DATABASE_PATH,
     source: str = "local-demo",
+    review_audit: dict | None = None,
 ) -> str:
     incident_id = f"INC-{uuid4().hex[:8].upper()}"
     created_at = _iso(utc_now())
@@ -347,6 +348,9 @@ def save_incident(
     environment = draft.get("environment")
     deployment_id = None
     deployment_reference = draft.get("deployment_reference")
+    extraction = dict(draft)
+    if review_audit is not None:
+        extraction["review_audit"] = {**review_audit, "saved_at": created_at}
     if service_id and environment and deployment_reference:
         with connect(db_path) as conn:
             deployments = conn.execute(
@@ -372,7 +376,7 @@ def save_incident(
                 incident_id, created_at, draft["transcript"], service_id, environment,
                 draft.get("severity"), json.dumps(draft.get("symptoms", [])),
                 draft.get("impact_summary"), draft.get("deployment_reference"), deployment_id,
-                json.dumps(draft, ensure_ascii=False), source,
+                json.dumps(extraction, ensure_ascii=False), source,
             ),
         )
     return incident_id
