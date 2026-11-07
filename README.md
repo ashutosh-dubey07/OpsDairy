@@ -11,7 +11,7 @@ Requirements: Python 3.12 and `uv`.
 ```powershell
 uv venv .venv --python 3.12
 uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-streamlit run app.py
+.\.venv\Scripts\streamlit.exe run app.py
 ```
 
 On first run, the app creates `data/opsdiary.sqlite3` and loads the synthetic seed files. That database is ignored by Git. To restore the original seed set, stop the app and remove the local database.
@@ -32,6 +32,8 @@ Live mode is available only when `GNANI_API_KEY` is configured. Without a key, t
 6. In the saved incident or History, add a text update or record/upload a synthetic WAV clip up to 30 seconds. Transcribe explicitly, review the text, select Update/Mitigated/Resolved, then save it to the incident timeline.
 
 Audio inputs are kept in Streamlit session memory for the request and are not written to disk. The Live upload flow accepts WAV so the app can enforce the 30-second duration locally before sending. Use synthetic audio/text only; do not upload production recordings or customer data.
+
+Each explicit **Transcribe audio**, **Transcribe update**, or **Speak summary** action sends one request to Gnani and may consume account credits. Demo mode, page loads, and mocked tests make no Gnani calls.
 
 Timeline entries are stored locally with UTC time, event type, source, and trace ID. They are engineer-authored notes; they do not trigger external actions or change infrastructure state.
 
@@ -70,7 +72,7 @@ Summarize saved operator corrections locally:
 
 This prints per-field review counts and correction rates without transcript text. These rates are review signals, not accuracy metrics; they do not train the extractor.
 
-The GitHub Actions workflow in `.github/workflows/ci.yml` installs the existing requirements, runs the unit and mocked API checks, then runs the synthetic evaluation on pushes and pull requests. It does not deploy the app or need API credentials. It will start running after this folder is added to a GitHub repository.
+The GitHub Actions workflow in `.github/workflows/ci.yml` installs the existing requirements, runs the unit and mocked API checks, then runs the synthetic evaluation on pushes and pull requests. It does not deploy the app or need API credentials.
 
 ## Mocked API contract checks
 
