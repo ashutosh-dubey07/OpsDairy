@@ -50,7 +50,8 @@ class GnaniClientContractTests(unittest.TestCase):
     @patch("opsdiary.gnani_client.requests.post")
     def test_timbre_v25_uses_documented_json_and_returns_audio_bytes(self, post: Mock) -> None:
         response = Mock()
-        response.content = b"mock-wav-bytes"
+        response.content = make_wav(1)
+        response.headers = {"Content-Type": "audio/wav"}
         post.return_value = response
 
         audio = gnani_client.synthesize_timbre_v25(
@@ -77,7 +78,27 @@ class GnaniClientContractTests(unittest.TestCase):
                 "sample_width": 2,
             },
         })
-        self.assertEqual(audio, b"mock-wav-bytes")
+        self.assertEqual(audio, response.content)
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_rejects_non_wav_response(self, post: Mock) -> None:
+        response = Mock()
+        response.content = b'{"success":false}'
+        response.headers = {"Content-Type": "application/json"}
+        post.return_value = response
+
+        with self.assertRaisesRegex(gnani_client.GnaniAPIError, "non-WAV response"):
+            gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_rejects_malformed_wav_response(self, post: Mock) -> None:
+        response = Mock()
+        response.content = b"not-a-wav"
+        response.headers = {"Content-Type": "audio/wav"}
+        post.return_value = response
+
+        with self.assertRaisesRegex(gnani_client.GnaniAPIError, "invalid WAV response"):
+            gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
 
     @patch("opsdiary.gnani_client.requests.post")
     @patch("opsdiary.gnani_client.GNANI_API_KEY", "")

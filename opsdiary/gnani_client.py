@@ -129,4 +129,12 @@ def synthesize_timbre_v25(
         response.raise_for_status()
     except requests.RequestException as exc:
         raise GnaniAPIError(f"Timbre v2.5 request failed: {exc}") from exc
-    return response.content
+    content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
+    if content_type not in {"audio/wav", "audio/x-wav"}:
+        raise GnaniAPIError("Timbre v2.5 returned a non-WAV response; expected audio/wav.")
+    audio_bytes = response.content
+    try:
+        wav_duration_seconds(audio_bytes)
+    except ValueError as exc:
+        raise GnaniAPIError("Timbre v2.5 returned an empty or invalid WAV response.") from exc
+    return audio_bytes
