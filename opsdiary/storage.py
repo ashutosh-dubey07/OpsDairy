@@ -329,6 +329,20 @@ def get_incident(incident_id: str, db_path: Path | str = DATABASE_PATH) -> dict 
     return _decode_incident(row) if row else None
 
 
+def list_review_audits(db_path: Path | str = DATABASE_PATH) -> list[dict]:
+    """Return only field-review metadata, without copying transcript content."""
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT source, extraction_json FROM incidents ORDER BY created_at"
+        ).fetchall()
+    audits = []
+    for row in rows:
+        extraction = json.loads(row["extraction_json"])
+        if audit := extraction.get("review_audit"):
+            audits.append({"source": row["source"], **audit})
+    return audits
+
+
 def _decode_incident(row: sqlite3.Row) -> dict:
     item = dict(row)
     item["symptoms"] = json.loads(item.pop("symptoms_json"))

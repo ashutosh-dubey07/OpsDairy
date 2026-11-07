@@ -59,6 +59,14 @@ Run the synthetic extraction evaluation locally:
 
 The evaluation uses only `data/evaluation_cases.json` and the synthetic service catalog. It checks exact field accuracy and evidence presence; every field gate must reach 90% and evidence coverage must reach 95%. It makes no API calls.
 
+Summarize saved operator corrections locally:
+
+```powershell
+.\.venv\Scripts\python.exe -m opsdiary.feedback
+```
+
+This prints per-field review counts and correction rates without transcript text. These rates are review signals, not accuracy metrics; they do not train the extractor.
+
 The GitHub Actions workflow in `.github/workflows/ci.yml` installs the existing requirements, runs the unit and mocked API checks, then runs the synthetic evaluation on pushes and pull requests. It does not deploy the app or need API credentials. It will start running after this folder is added to a GitHub repository.
 
 ## Mocked API contract checks
