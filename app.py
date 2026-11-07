@@ -13,7 +13,7 @@ from opsdiary.gnani_client import (
 from opsdiary.observability import new_trace_id, observed_stage, trace_scope
 from opsdiary.schema import IncidentDraft
 from opsdiary.settings import GNANI_API_KEY
-from opsdiary.workflow import IncidentWorkflow
+from opsdiary.workflow import IncidentAnalysis, IncidentWorkflow
 from opsdiary.storage import (
     get_incident,
     init_db,
@@ -316,6 +316,22 @@ def render_incident_result(
     analysis = workflow.analyze(incident_id)
     if not analysis:
         return
+
+    render_incident_analysis(
+        analysis,
+        allow_tts=allow_tts,
+        allow_voice_updates=allow_voice_updates,
+        location=location,
+    )
+
+
+def render_incident_analysis(
+    analysis: IncidentAnalysis,
+    *,
+    allow_tts: bool = False,
+    allow_voice_updates: bool = False,
+    location: str = "result",
+) -> None:
     incident = analysis.incident
     st.subheader("Incident")
     st.caption(f"{incident['incident_id']} - {incident['created_at']} UTC - {incident['source']}")
@@ -620,23 +636,9 @@ with history_tab:
             selected_history_id = st.selectbox("Incident", incident_ids, key="history_incident")
             analysis = workflow.analyze(selected_history_id)
             if analysis:
-                selected_incident = analysis.incident
-                st.write(selected_incident["transcript"])
-                st.caption(
-                    "Symptoms: "
-                    + (", ".join(SYMPTOM_LABELS.get(tag, tag) for tag in selected_incident["symptoms"]) or "none")
-                )
-                render_review_audit(selected_incident)
-                render_enrichment(analysis.service_context)
-                st.markdown("**Historical matches**")
-                render_pattern_evidence(analysis.pattern_result)
-                render_related_records(analysis.related_records)
-                render_runbook_references(analysis.runbook_references)
-                render_incident_timeline(
+                render_incident_analysis(
                     analysis,
+                    allow_tts=(mode == "Live"),
+                    allow_voice_updates=(mode == "Live"),
                     location="history",
-                    allow_voice=(mode == "Live"),
                 )
-                if mode == "Live":
-                    render_speech_controls(selected_incident, analysis.summary, "history")
-                render_report_download(selected_incident, analysis.report, "history")
