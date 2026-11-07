@@ -24,11 +24,11 @@ class IncidentDraft(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
     transcript: str = Field(min_length=1, max_length=10000)
-    service_id: str | None = None
+    service_id: str | None = Field(default=None, max_length=100)
     environment: Environment | None = None
     severity: Severity | None = None
-    symptoms: list[str] = Field(default_factory=list)
-    impact_summary: str | None = None
-    deployment_reference: str | None = None
-    evidence: dict[str, str] = Field(default_factory=dict)
+    symptoms: list[str] = Field(default_factory=list, max_length=20)
+    impact_summary: str | None = Field(default=None, max_length=2000)
+    deployment_reference: str | None = Field(default=None, max_length=120)
+    evidence: dict[str, str] = Field(default_factory=dict, max_length=20)
     trace_id: str | None = Field(default=None, min_length=1, max_length=64)

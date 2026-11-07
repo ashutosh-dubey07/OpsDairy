@@ -10,6 +10,9 @@ from uuid import uuid4
 
 from opsdiary.settings import DATABASE_PATH, PROJECT_ROOT
 
+DATABASE_SCHEMA_VERSION = 1
+SQLITE_BUSY_TIMEOUT_MS = 10_000
+
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -23,10 +26,11 @@ def _iso(value: datetime) -> str:
 def connect(db_path: Path | str = DATABASE_PATH) -> Iterator[sqlite3.Connection]:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=SQLITE_BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
     try:
         conn.execute("PRAGMA foreign_keys = ON")
+        conn.execute(f"PRAGMA busy_timeout = {SQLITE_BUSY_TIMEOUT_MS}")
         yield conn
         conn.commit()
     except BaseException:
@@ -38,8 +42,15 @@ def connect(db_path: Path | str = DATABASE_PATH) -> Iterator[sqlite3.Connection]
 
 def init_db(db_path: Path | str = DATABASE_PATH) -> None:
     with connect(db_path) as conn:
+        current_version = conn.execute("PRAGMA user_version").fetchone()[0]
+        if current_version > DATABASE_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Database schema version {current_version} is newer than this "
+                f"application supports ({DATABASE_SCHEMA_VERSION})."
+            )
         conn.executescript(
             """
+            BEGIN IMMEDIATE;
             CREATE TABLE IF NOT EXISTS services (
                 service_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -173,6 +184,7 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
         _seed_synthetic_runbooks(conn)
         _backfill_incident_search(conn)
         _backfill_runbook_search(conn)
+        conn.execute(f"PRAGMA user_version = {DATABASE_SCHEMA_VERSION}")
 
 
 def _backfill_incident_search(conn: sqlite3.Connection) -> None:

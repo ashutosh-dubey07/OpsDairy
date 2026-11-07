@@ -20,6 +20,7 @@ from opsdiary.storage import (
 
 
 TIMELINE_EVENT_TYPES = {"update", "mitigated", "resolved"}
+INCIDENT_SOURCES = {"local-demo", "live-stt"}
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,8 @@ class IncidentWorkflow:
         candidate_data: IncidentDraft | dict | None = None,
     ) -> str:
         """Validate reviewed fields at the application boundary before persistence."""
+        if source not in INCIDENT_SOURCES:
+            raise ValueError("Unknown incident source.")
         supplied_trace_id = (
             draft_data.trace_id
             if isinstance(draft_data, IncidentDraft)
@@ -131,7 +134,7 @@ class IncidentWorkflow:
             raise ValueError("Enter an update before saving it.")
         if len(note) > 10000:
             raise ValueError("Update must be 10,000 characters or less.")
-        if source not in {"local-demo", "live-stt"}:
+        if source not in INCIDENT_SOURCES:
             raise ValueError("Unknown timeline source.")
         if not get_incident(incident_id, db_path=self.db_path):
             raise ValueError(f"Unknown incident: {incident_id}")

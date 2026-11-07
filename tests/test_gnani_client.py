@@ -5,6 +5,8 @@ import unittest
 import wave
 from unittest.mock import Mock, patch
 
+import requests
+
 from opsdiary import gnani_client
 
 
@@ -91,6 +93,37 @@ class GnaniClientContractTests(unittest.TestCase):
             gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
 
     @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_surfaces_bounded_provider_error_message(self, post: Mock) -> None:
+        response = Mock()
+        response.status_code = 400
+        response.json.return_value = {
+            "success": False,
+            "message": "Invalid request: sample_rate must be one of the documented values",
+        }
+        response.raise_for_status.side_effect = requests.HTTPError(
+            "HTTP 400", response=response
+        )
+        post.return_value = response
+
+        with self.assertRaisesRegex(
+            gnani_client.GnaniAPIError, "sample_rate must be one of the documented values"
+        ):
+            gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_prisma_surfaces_documented_error_shape(self, post: Mock) -> None:
+        response = Mock()
+        response.json.return_value = {
+            "success": False,
+            "error": {"type": "INVALID_LANGUAGE", "message": "Unsupported language"},
+        }
+        post.return_value = response
+
+        with self.assertRaisesRegex(gnani_client.GnaniAPIError, "Unsupported language"):
+            gnani_client.transcribe_prisma_v25(make_wav(1), api_key="mock-key")
+        post.assert_called_once()
+
+    @patch("opsdiary.gnani_client.requests.post")
     def test_timbre_rejects_malformed_wav_response(self, post: Mock) -> None:
         response = Mock()
         response.content = b"not-a-wav"
@@ -163,6 +196,19 @@ class GnaniClientContractTests(unittest.TestCase):
         self.assertEqual(gnani_client.validate_wav_duration(make_wav(30)), 30)
         with self.assertRaisesRegex(ValueError, "maximum is 30 seconds"):
             gnani_client.validate_wav_duration(make_wav(31))
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_prisma_rejects_audio_over_30_seconds_before_request(self, post: Mock) -> None:
+        with self.assertRaisesRegex(ValueError, "maximum is 30 seconds"):
+            gnani_client.transcribe_prisma_v25(make_wav(31), api_key="mock-key")
+        post.assert_not_called()
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_audio_size_limit_is_enforced_before_wav_parsing_or_request(self, post: Mock) -> None:
+        oversized = b"x" * (gnani_client.MAX_STT_AUDIO_BYTES + 1)
+        with self.assertRaisesRegex(ValueError, "10 MB limit"):
+            gnani_client.transcribe_prisma_v25(oversized, api_key="mock-key")
+        post.assert_not_called()
 
 
 if __name__ == "__main__":

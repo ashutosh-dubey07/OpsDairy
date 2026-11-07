@@ -185,6 +185,12 @@ class IncidentWorkflowTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "Unknown service"):
             self.workflow.save_reviewed(draft, source="local-demo")
 
+    def test_unknown_incident_source_is_rejected(self) -> None:
+        draft = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
+
+        with self.assertRaisesRegex(ValueError, "Unknown incident source"):
+            self.workflow.save_reviewed(draft, source="untrusted-source")
+
 
 if __name__ == "__main__":
     unittest.main()

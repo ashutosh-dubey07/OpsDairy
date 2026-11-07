@@ -18,6 +18,8 @@ from opsdiary.settings import (
 
 STT_URL = "https://api.vachana.ai/stt/v3"
 TTS_URL = "https://api.vachana.ai/api/v1/tts/inference"
+MAX_STT_AUDIO_SECONDS = 30
+MAX_STT_AUDIO_BYTES = 10 * 1024 * 1024
 SUPPORTED_WAV_SAMPLE_RATES = {8000, 16000, 22050, 24000, 44100, 48000}
 SUPPORTED_WAV_SAMPLE_WIDTHS = {1, 2, 3, 4}
 
@@ -28,6 +30,33 @@ class GnaniConfigurationError(RuntimeError):
 
 class GnaniAPIError(RuntimeError):
     """Raised when a documented Gnani REST request fails."""
+
+
+def _message_from_payload(payload: object) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+
+    for candidate in (payload.get("message"), payload.get("error"), payload.get("detail")):
+        if isinstance(candidate, str) and candidate.strip():
+            return " ".join(candidate.split())[:500]
+        if isinstance(candidate, dict):
+            message = candidate.get("message")
+            code = candidate.get("error_code") or candidate.get("type")
+            if isinstance(message, str) and message.strip():
+                clean_message = " ".join(message.split())[:500]
+                return f"{code}: {clean_message}" if code else clean_message
+            if isinstance(code, str) and code.strip():
+                return code[:100]
+    return None
+
+
+def _response_error_message(response) -> str | None:
+    if response is None:
+        return None
+    try:
+        return _message_from_payload(response.json())
+    except (AttributeError, requests.RequestException, ValueError):
+        return None
 
 
 def wav_duration_seconds(audio_bytes: bytes) -> float:
@@ -45,8 +74,15 @@ def wav_duration_seconds(audio_bytes: bytes) -> float:
         raise ValueError("Use a valid WAV recording for the live microphone/upload flow.") from exc
 
 
-def validate_wav_duration(audio_bytes: bytes, max_seconds: int = 30) -> float:
+def validate_wav_duration(
+    audio_bytes: bytes,
+    max_seconds: int = MAX_STT_AUDIO_SECONDS,
+) -> float:
     """Validate a WAV clip before it is sent to Prisma REST."""
+    if not audio_bytes:
+        raise ValueError("Audio file is empty.")
+    if len(audio_bytes) > MAX_STT_AUDIO_BYTES:
+        raise ValueError("Audio file exceeds the 10 MB limit.")
     duration = wav_duration_seconds(audio_bytes)
     if duration > max_seconds:
         raise ValueError(f"Audio is {duration:.1f} seconds; the maximum is {max_seconds} seconds.")
@@ -107,9 +143,11 @@ def transcribe_prisma_v25(
     """
     if not audio_bytes:
         raise ValueError("Audio file is empty.")
+    validate_wav_duration(audio_bytes)
     language = (language_code or GNANI_STT_LANGUAGE_CODE).strip()
     if not language:
         raise ValueError("language_code is required by the Prisma REST endpoint.")
+    response = None
     try:
         response = requests.post(
             STT_URL,
@@ -121,12 +159,20 @@ def transcribe_prisma_v25(
         response.raise_for_status()
         body = response.json()
     except requests.RequestException as exc:
-        raise GnaniAPIError(f"Prisma v2.5 request failed: {exc}") from exc
+        error_response = getattr(exc, "response", None) or response
+        detail = _response_error_message(error_response)
+        raise GnaniAPIError(
+            f"Prisma v2.5 request failed: {detail or exc}"
+        ) from exc
     except ValueError as exc:
         raise GnaniAPIError("Prisma v2.5 returned an invalid response.") from exc
+    if not isinstance(body, dict):
+        raise GnaniAPIError("Prisma v2.5 returned an unexpected response shape.")
     if not body.get("success", False):
-        error = body.get("error", {})
-        raise GnaniAPIError(error.get("message", "Prisma v2.5 transcription failed."))
+        message = _message_from_payload(body) or "Prisma v2.5 transcription failed."
+        raise GnaniAPIError(message)
+    if not isinstance(body.get("transcript"), str):
+        raise GnaniAPIError("Prisma v2.5 response is missing transcript text.")
     return body
 
 
@@ -154,13 +200,18 @@ def synthesize_timbre_v25(
         },
     }
     headers = {**_headers(api_key), "Content-Type": "application/json"}
+    response = None
     try:
         response = requests.post(
             TTS_URL, headers=headers, json=payload, timeout=timeout_seconds
         )
         response.raise_for_status()
     except requests.RequestException as exc:
-        raise GnaniAPIError(f"Timbre v2.5 request failed: {exc}") from exc
+        error_response = getattr(exc, "response", None) or response
+        detail = _response_error_message(error_response)
+        raise GnaniAPIError(
+            f"Timbre v2.5 request failed: {detail or exc}"
+        ) from exc
     content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
     if content_type not in {"audio/wav", "audio/x-wav", "audio/vnd.wave"}:
         raise GnaniAPIError(
