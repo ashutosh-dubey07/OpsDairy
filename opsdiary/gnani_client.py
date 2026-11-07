@@ -18,6 +18,8 @@ from opsdiary.settings import (
 
 STT_URL = "https://api.vachana.ai/stt/v3"
 TTS_URL = "https://api.vachana.ai/api/v1/tts/inference"
+SUPPORTED_WAV_SAMPLE_RATES = {8000, 16000, 22050, 24000, 44100, 48000}
+SUPPORTED_WAV_SAMPLE_WIDTHS = {1, 2, 3, 4}
 
 
 class GnaniConfigurationError(RuntimeError):
@@ -52,7 +54,7 @@ def validate_wav_duration(audio_bytes: bytes, max_seconds: int = 30) -> float:
 
 
 def _validate_timbre_wav(audio_bytes: bytes) -> None:
-    """Reject a malformed WAV or one that disagrees with the requested TTS format."""
+    """Reject malformed PCM or WAV headers that cannot be played reliably."""
     try:
         with wave.open(BytesIO(audio_bytes), "rb") as wav_file:
             channels = wav_file.getnchannels()
@@ -64,14 +66,18 @@ def _validate_timbre_wav(audio_bytes: bytes) -> None:
 
     expected_audio_bytes = frame_count * channels * sample_width
     if (
-        channels != 1
-        or sample_width != 2
-        or sample_rate != 48000
+        channels not in {1, 2}
+        or sample_width not in SUPPORTED_WAV_SAMPLE_WIDTHS
+        or sample_rate not in SUPPORTED_WAV_SAMPLE_RATES
         or frame_count <= 0
         or expected_audio_bytes > len(audio_bytes)
     ):
         raise GnaniAPIError(
-            "Timbre v2.5 WAV does not match the requested audio format."
+            "Timbre v2.5 returned an unsupported or inconsistent WAV "
+            f"(channels={channels}, sample_width={sample_width}, "
+            f"sample_rate={sample_rate}, frames={frame_count}, "
+            f"expected_audio_bytes={expected_audio_bytes}, "
+            f"response_bytes={len(audio_bytes)})."
         )
 
 
