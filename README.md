@@ -24,7 +24,7 @@ Demo is the default and remains available without credentials. **Run sample inci
 
 Live mode is available only when `GNANI_API_KEY` is configured. Without a key, the mode selector stays on Demo and shows a short setup note. Importing the API module or loading the page does not make a request.
 
-1. Copy `.env.example` to `.env` and set `GNANI_API_KEY` to a Gnani key authorized for both STT and TTS. Keep `.env` local; it is ignored by Git.
+1. Create a file named `.env` in the project root and add `GNANI_API_KEY=<your Gnani API key>`. Add the optional settings below only if you need to override their defaults. Keep `.env` local; it is ignored by Git.
 2. Restart Streamlit so the environment is reloaded.
 3. Select **Live**, record a synthetic note with the microphone or upload a synthetic WAV clip no longer than 30 seconds, then press **Transcribe audio**.
 4. Review/edit the transcript, choose **Extract fields**, review the structured fields, and save.
