@@ -11,7 +11,7 @@ Streamlit capture/review
   -> Pydantic validation and human review
   -> SQLite incident store
   -> service/deployment enrichment
-  -> exact historical pattern checks + FTS5 transcript retrieval
+  -> exact historical pattern checks + FTS5 incident/runbook retrieval
   -> evidence-backed report and optional Timbre speech
 ```
 
@@ -24,13 +24,13 @@ Streamlit capture/review
 | Application workflow | `IncidentWorkflow` owns extraction, save validation, enrichment, retrieval, and report assembly | UI delegates incident mutations and analysis to the workflow |
 | Incident schema | Pydantic fields, known-service/symptom checks, transcript evidence, trace ID | Unknown fields stay unset; the operator confirms candidate values |
 | Context | Service catalog and exact deployment-version match from SQLite | A latest deployment is labeled as context, not as incident cause |
-| Retrieval | Exact service/environment/symptom matching plus SQLite FTS5 lexical search | Results include incident IDs, matched terms, and transcript excerpts |
-| Persistence | SQLite incidents, services, deployments, and FTS index | Seed records are synthetic; raw audio is not stored |
+| Retrieval | Exact service/environment/symptom matching plus SQLite FTS5 search over incidents and bundled runbook examples | Results include incident IDs or runbook IDs, matched terms, and source evidence; runbooks require a confirmed service |
+| Persistence | SQLite incidents, services, deployments, synthetic runbooks, and FTS indexes | Seed records are synthetic; raw audio is not stored |
 | Operations | Structured stage logs include trace ID, provider, outcome, latency, request ID, and error type | Logs omit transcript text, audio content, API keys, and exception messages |
 | Quality | Mocked provider contract checks, workflow tests, synthetic extraction evaluation, CI | CI uses no credentials and makes no live provider calls |
 
 ## Deliberate scope
 
-The current demo is single-user and has no write actions into external systems. Team-level RBAC and MCP tool servers belong with a multi-user deployment or an actual service connector. A cache is unnecessary for the current small local dataset. Extraction and analysis use deterministic code, so a generative system prompt and prompt-injection classifier are not part of this path. Semantic retrieval should be evaluated against real, permission-safe examples before adding a vector index; FTS5 is the current lexical baseline.
+The current demo is single-user and has no write actions into external systems. Team-level RBAC and MCP tool servers belong with a multi-user deployment or an actual service connector. A cache is unnecessary for the current small local dataset. Extraction and analysis use deterministic code, so a generative system prompt and prompt-injection classifier are not part of this path. Runbook records are synthetic examples, not operational guidance. Semantic retrieval should be evaluated against real, permission-safe examples before adding a vector index; FTS5 is the current lexical baseline.
 
 The next integration should be chosen from the challenge demo's available evidence sources. Any external write action must be previewed and explicitly confirmed by the engineer.

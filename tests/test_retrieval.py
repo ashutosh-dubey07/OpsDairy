@@ -1,8 +1,9 @@
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
 
-from opsdiary.retrieval import retrieve_incidents
+from opsdiary.retrieval import retrieve_incidents, retrieve_runbooks
 from opsdiary.storage import init_db
 
 
@@ -41,6 +42,41 @@ class IncidentRetrievalTests(unittest.TestCase):
     def test_stop_words_only_query_returns_no_results(self) -> None:
         self.assertEqual(
             retrieve_incidents("the issue is in service", db_path=self.db_path), []
+        )
+
+    def test_runbook_seed_and_search_index_are_idempotent(self) -> None:
+        init_db(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM runbooks").fetchone()[0], 8)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM runbook_search").fetchone()[0], 8)
+        finally:
+            conn.close()
+
+    def test_runbooks_require_confirmed_service_and_return_match_evidence(self) -> None:
+        matches = retrieve_runbooks(
+            "Checkout production 5xx errors slow payments fail",
+            service_id="checkout-api",
+            environment="production",
+            symptoms=["http_5xx", "payment_failures"],
+            db_path=self.db_path,
+        )
+        self.assertTrue(matches)
+        self.assertEqual(matches[0]["runbook_id"], "SYN-RB-CHK-5XX")
+        self.assertTrue(matches[0]["matched_terms"])
+        self.assertTrue(matches[0]["matched_symptoms"])
+        self.assertEqual(matches[0]["source"], "synthetic-runbook")
+
+        wrong_service = retrieve_runbooks(
+            "Checkout production 5xx errors slow payments fail",
+            service_id="auth-api",
+            environment="production",
+            symptoms=["http_5xx", "payment_failures"],
+            db_path=self.db_path,
+        )
+        self.assertEqual(wrong_service, [])
+        self.assertEqual(
+            retrieve_runbooks("5xx errors", service_id=None, db_path=self.db_path), []
         )
 
 

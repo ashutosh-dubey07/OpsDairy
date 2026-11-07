@@ -47,7 +47,7 @@ The client uses Prisma v2.5 REST at `https://api.vachana.ai/stt/v3`; it sends `a
 
 The Streamlit page calls `IncidentWorkflow` for extraction, reviewed-field validation, persistence, and incident analysis. This keeps application rules independent of UI rendering. Unknown service IDs and symptom tags are rejected before persistence.
 
-Historical context uses SQLite FTS5 lexical retrieval, filtered by confirmed service and environment when available. Results include the source incident ID, matched terms, and transcript evidence excerpt. Structured JSON operational logs record trace ID, stage, outcome, latency, and provider metadata; they omit transcript text, audio bytes, and API keys.
+Historical context uses SQLite FTS5 lexical retrieval, filtered by confirmed service and environment when available. Results include the source incident ID, matched terms, and transcript evidence excerpt. The same retrieval layer can show bundled synthetic runbook examples only for the confirmed service; each result carries its runbook ID and matching terms. These checklists are illustrative examples, not approved operational instructions, and must be checked against the service's real runbook. Structured JSON operational logs record trace ID, stage, outcome, latency, and provider metadata; they omit transcript text, audio bytes, and API keys.
 
 Run the synthetic extraction evaluation locally:
 

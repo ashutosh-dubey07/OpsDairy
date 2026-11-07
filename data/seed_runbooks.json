@@ -1,0 +1,82 @@
+[
+  {
+    "runbook_id": "SYN-RB-CHK-5XX",
+    "service_id": "checkout-api",
+    "title": "Checkout server errors and payment failures",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["http_5xx", "payment_failures"],
+    "keywords": "checkout 5xx 500 server errors payment failures provider timeout request route",
+    "body": "Synthetic reference checklist: compare 5xx rates by checkout route and request ID; inspect payment-provider latency and timeout counts; compare database pool saturation with the incident window; record the deployed version reported by the engineer. These are investigation pointers only; verify against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-CHK-LATENCY",
+    "service_id": "checkout-api",
+    "title": "Checkout latency and request timeouts",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["latency", "timeouts"],
+    "keywords": "checkout latency slow timeouts requests payment database pool queue",
+    "body": "Synthetic reference checklist: compare request latency percentiles by route; inspect timeout counts and queue depth; compare database pool wait time with payment-provider latency; note whether the impact is limited to a route or region. Verify every check against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-AUTH-401",
+    "service_id": "auth-api",
+    "title": "Authentication errors and login failures",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["auth_failures"],
+    "keywords": "auth login 401 authentication failures sessions token issuer refresh",
+    "body": "Synthetic reference checklist: compare 401 and 5xx counts by endpoint; inspect token-issuer health and token-expiry distribution; compare session-store errors with login failures; check whether failures affect new logins, refreshes, or both. Verify every check against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-AUTH-LATENCY",
+    "service_id": "auth-api",
+    "title": "Authentication latency and session refresh delays",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["latency", "timeouts"],
+    "keywords": "auth login slow latency timeout sessions refresh token issuer",
+    "body": "Synthetic reference checklist: compare login and refresh latency separately; inspect token-issuer response times and session-store latency; compare timeout counts across endpoints and regions. Verify every check against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-SRCH-LATENCY",
+    "service_id": "search-api",
+    "title": "Search latency and slow results",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["latency"],
+    "keywords": "search latency slow results query index shards queue timeout",
+    "body": "Synthetic reference checklist: compare query latency by endpoint and query class; inspect index freshness, shard health, and queue depth; compare timeout rates with the affected region and time window. Verify every check against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-SRCH-ERRORS",
+    "service_id": "search-api",
+    "title": "Search server errors and unavailable results",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["http_5xx", "timeouts"],
+    "keywords": "search 5xx 500 errors unavailable results query index shards timeout",
+    "body": "Synthetic reference checklist: group 5xx errors by search endpoint; inspect shard availability and query timeout counts; compare indexer backlog with result freshness. Verify every check against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-CAT-DB",
+    "service_id": "catalog-api",
+    "title": "Catalog errors and database saturation",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["http_5xx", "database_saturation"],
+    "keywords": "catalog 5xx errors database pool saturation connections query",
+    "body": "Synthetic reference checklist: compare catalog 5xx rates by endpoint; inspect database connection-pool wait time and query latency; compare affected requests with the incident window and deployed version. Verify every check against the service's approved runbook."
+  },
+  {
+    "runbook_id": "SYN-RB-CAT-LATENCY",
+    "service_id": "catalog-api",
+    "title": "Catalog latency and slow product responses",
+    "version": "synthetic-1",
+    "environment": null,
+    "symptoms": ["latency", "timeouts"],
+    "keywords": "catalog latency slow product responses cache database pool timeouts",
+    "body": "Synthetic reference checklist: compare product-response latency by endpoint; inspect cache hit rate and database pool wait time; compare timeout counts by region and request class. Verify every check against the service's approved runbook."
+  }
+]

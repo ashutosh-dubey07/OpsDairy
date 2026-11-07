@@ -35,6 +35,10 @@ class IncidentWorkflowTests(unittest.TestCase):
         self.assertEqual(analysis.incident["severity"], "SEV2")
         self.assertEqual(analysis.incident["deployment_id"], "DEP-CHK-281")
         self.assertEqual(analysis.service_context["name"], "Checkout API")
+        self.assertTrue(analysis.runbook_references)
+        self.assertEqual(analysis.runbook_references[0]["runbook_id"], "SYN-RB-CHK-5XX")
+        self.assertIn("Synthetic runbook references", analysis.report)
+        self.assertIn("SYN-RB-CHK-5XX", analysis.report)
         self.assertEqual(
             analysis.service_context["referenced_deployment"]["deployment_id"],
             "DEP-CHK-281",

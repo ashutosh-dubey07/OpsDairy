@@ -103,3 +103,74 @@ def retrieve_incidents(
             }
         )
     return results[:bounded_limit]
+
+
+def retrieve_runbooks(
+    query: str,
+    *,
+    service_id: str | None,
+    environment: str | None = None,
+    symptoms: list[str] | None = None,
+    limit: int = 3,
+    db_path: Path | str = DATABASE_PATH,
+) -> list[dict]:
+    """Return synthetic references for the confirmed service with lexical evidence.
+
+    Service is mandatory so an unknown service cannot receive another team's guidance.
+    A null runbook environment means the synthetic reference has no environment scope.
+    """
+    terms = _terms(query)
+    if not service_id or not terms:
+        return []
+
+    clauses = ["runbook_search MATCH ?", "runbook_search.service_id = ?"]
+    params: list[object] = [" OR ".join(f'"{term}"' for term in terms), service_id]
+    if environment:
+        clauses.append("(runbook_search.environment = '' OR runbook_search.environment = ?)")
+        params.append(environment)
+    bounded_limit = max(1, min(int(limit), 10))
+    params.append(min(bounded_limit * 5, 50))
+
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            f"""SELECT r.runbook_id, r.service_id, r.title, r.version, r.environment,
+                       r.symptoms_json, r.keywords, r.body, r.source,
+                       bm25(runbook_search, 0.0, 2.0, 1.0, 0.8, 0.0, 0.0) AS rank
+                FROM runbook_search
+                JOIN runbooks AS r ON r.runbook_id = runbook_search.runbook_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY rank ASC
+                LIMIT ?""",
+            params,
+        ).fetchall()
+
+    requested_symptoms = set(symptoms or [])
+    minimum_matched_terms = 1 if len(terms) == 1 else 2
+    results = []
+    for row in rows:
+        indexed_text = " ".join((row["title"], row["body"], row["keywords"]))
+        indexed_terms = set(_terms(indexed_text))
+        matched_terms = [term for term in terms if term in indexed_terms]
+        if len(matched_terms) < minimum_matched_terms:
+            continue
+        runbook_symptoms = json.loads(row["symptoms_json"])
+        matched_symptoms = sorted(requested_symptoms.intersection(runbook_symptoms))
+        if requested_symptoms and not matched_symptoms:
+            continue
+        results.append(
+            {
+                "runbook_id": row["runbook_id"],
+                "service_id": row["service_id"],
+                "title": row["title"],
+                "version": row["version"],
+                "environment": row["environment"],
+                "symptoms": runbook_symptoms,
+                "matched_symptoms": matched_symptoms,
+                "matched_terms": matched_terms,
+                "body": row["body"],
+                "source": row["source"],
+                "method": "sqlite-fts5-lexical",
+            }
+        )
+    results.sort(key=lambda item: (-len(item["matched_symptoms"]), -len(item["matched_terms"])))
+    return results[:bounded_limit]

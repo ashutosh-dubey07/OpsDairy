@@ -7,7 +7,7 @@ from opsdiary.enrichment import enrich_incident
 from opsdiary.extraction import SYMPTOM_LABELS, extract_incident
 from opsdiary.observability import observed_stage, trace_scope
 from opsdiary.patterns import detect_patterns
-from opsdiary.retrieval import retrieve_incidents
+from opsdiary.retrieval import retrieve_incidents, retrieve_runbooks
 from opsdiary.reporting import build_incident_report
 from opsdiary.schema import IncidentDraft
 from opsdiary.settings import DATABASE_PATH
@@ -20,6 +20,7 @@ class IncidentAnalysis:
     service_context: dict | None
     pattern_result: dict
     related_records: list[dict]
+    runbook_references: list[dict]
     summary: str
     report: str
 
@@ -110,14 +111,25 @@ class IncidentWorkflow:
                     record for record in related_records
                     if record["incident_id"] not in exact_match_ids
                 ]
+                with observed_stage("context.runbook_retrieve", incident_id=incident_id):
+                    runbook_references = retrieve_runbooks(
+                        incident.get("transcript", ""),
+                        service_id=incident.get("service_id"),
+                        environment=incident.get("environment"),
+                        symptoms=incident.get("symptoms", []),
+                        limit=3,
+                        db_path=self.db_path,
+                    )
                 report = build_incident_report(
-                    incident, service_context, pattern_result, related_records
+                    incident, service_context, pattern_result, related_records,
+                    runbook_references,
                 )
                 return IncidentAnalysis(
                     incident=incident,
                     service_context=service_context,
                     pattern_result=pattern_result,
                     related_records=related_records,
+                    runbook_references=runbook_references,
                     summary=self._summary(incident),
                     report=report,
                 )

@@ -12,6 +12,7 @@ def build_incident_report(
     service: dict | None,
     pattern_result: dict,
     related_records: list[dict] | None = None,
+    runbook_references: list[dict] | None = None,
 ) -> str:
     service_name = service.get("name") if service else "Unknown"
     symptom_labels = [SYMPTOM_LABELS.get(tag, tag) for tag in incident.get("symptoms", [])]
@@ -118,6 +119,26 @@ def build_incident_report(
                 lines.append(f"\nCatalog deployment: {record['deployment_id']}")
     else:
         lines.append("No additional transcript search matches were found.")
+
+    lines.extend(["", "## Synthetic runbook references", ""])
+    if runbook_references:
+        lines.append(
+            "These bundled checklists are synthetic examples retrieved for this service. "
+            "They are not approved operational instructions; verify against the service's real runbook."
+        )
+        for runbook in runbook_references:
+            lines.extend(
+                [
+                    "",
+                    f"### {runbook['title']} ({runbook['runbook_id']}, {runbook['version']})",
+                    f"Matched terms: {', '.join(runbook.get('matched_terms', [])) or 'text match'}",
+                ]
+            )
+            if runbook.get("matched_symptoms"):
+                lines.append(f"Matched symptoms: {', '.join(runbook['matched_symptoms'])}")
+            lines.extend(["", runbook["body"]])
+    else:
+        lines.append("No synthetic runbook reference matched this confirmed service and transcript.")
 
     lines.extend(
         [

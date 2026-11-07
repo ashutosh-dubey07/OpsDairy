@@ -85,6 +85,52 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
                 symptoms
             );
 
+            CREATE TABLE IF NOT EXISTS runbooks (
+                runbook_id TEXT PRIMARY KEY,
+                service_id TEXT NOT NULL REFERENCES services(service_id),
+                title TEXT NOT NULL,
+                version TEXT NOT NULL,
+                environment TEXT,
+                symptoms_json TEXT NOT NULL DEFAULT '[]',
+                keywords TEXT NOT NULL DEFAULT '',
+                body TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'synthetic-runbook'
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS runbook_search USING fts5(
+                runbook_id UNINDEXED,
+                title,
+                body,
+                keywords,
+                service_id UNINDEXED,
+                environment UNINDEXED
+            );
+
+            CREATE TRIGGER IF NOT EXISTS runbooks_search_insert
+            AFTER INSERT ON runbooks BEGIN
+                INSERT INTO runbook_search
+                    (runbook_id, title, body, keywords, service_id, environment)
+                VALUES (
+                    new.runbook_id, new.title, new.body, new.keywords,
+                    new.service_id, COALESCE(new.environment, '')
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS runbooks_search_update
+            AFTER UPDATE ON runbooks BEGIN
+                DELETE FROM runbook_search WHERE runbook_id = old.runbook_id;
+                INSERT INTO runbook_search
+                    (runbook_id, title, body, keywords, service_id, environment)
+                VALUES (
+                    new.runbook_id, new.title, new.body, new.keywords,
+                    new.service_id, COALESCE(new.environment, '')
+                );
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS runbooks_search_delete
+            AFTER DELETE ON runbooks BEGIN
+                DELETE FROM runbook_search WHERE runbook_id = old.runbook_id;
+            END;
+
             CREATE TRIGGER IF NOT EXISTS incidents_search_insert
             AFTER INSERT ON incidents BEGIN
                 INSERT INTO incident_search
@@ -113,7 +159,9 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
             """
         )
         _seed_synthetic_data(conn)
+        _seed_synthetic_runbooks(conn)
         _backfill_incident_search(conn)
+        _backfill_runbook_search(conn)
 
 
 def _backfill_incident_search(conn: sqlite3.Connection) -> None:
@@ -135,6 +183,29 @@ def _backfill_incident_search(conn: sqlite3.Connection) -> None:
             (
                 row["incident_id"], row["transcript"], row["impact_summary"] or "",
                 row["service_id"] or "", row["environment"] or "", row["symptoms_json"],
+            )
+            for row in missing
+        ],
+    )
+
+
+def _backfill_runbook_search(conn: sqlite3.Connection) -> None:
+    missing = conn.execute(
+        """SELECT r.runbook_id, r.title, r.body, r.keywords, r.service_id, r.environment
+           FROM runbooks AS r
+           LEFT JOIN runbook_search AS s ON s.runbook_id = r.runbook_id
+           WHERE s.runbook_id IS NULL"""
+    ).fetchall()
+    if not missing:
+        return
+    conn.executemany(
+        """INSERT INTO runbook_search
+           (runbook_id, title, body, keywords, service_id, environment)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        [
+            (
+                row["runbook_id"], row["title"], row["body"], row["keywords"],
+                row["service_id"], row["environment"] or "",
             )
             for row in missing
         ],
@@ -191,6 +262,42 @@ def _seed_synthetic_data(conn: sqlite3.Connection) -> None:
                 json.dumps({"seeded": True}),
             )
             for item in incidents
+        ],
+    )
+
+
+def _seed_synthetic_runbooks(conn: sqlite3.Connection) -> None:
+    data_path = PROJECT_ROOT / "data" / "seed_runbooks.json"
+    runbooks = json.loads(data_path.read_text(encoding="utf-8"))
+    conn.executemany(
+        """INSERT INTO runbooks
+           (runbook_id, service_id, title, version, environment, symptoms_json,
+            keywords, body, source)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'synthetic-runbook')
+           ON CONFLICT(runbook_id) DO UPDATE SET
+               service_id = excluded.service_id,
+               title = excluded.title,
+               version = excluded.version,
+               environment = excluded.environment,
+               symptoms_json = excluded.symptoms_json,
+               keywords = excluded.keywords,
+               body = excluded.body,
+               source = excluded.source
+           WHERE runbooks.service_id IS NOT excluded.service_id
+              OR runbooks.title IS NOT excluded.title
+              OR runbooks.version IS NOT excluded.version
+              OR runbooks.environment IS NOT excluded.environment
+              OR runbooks.symptoms_json IS NOT excluded.symptoms_json
+              OR runbooks.keywords IS NOT excluded.keywords
+              OR runbooks.body IS NOT excluded.body
+              OR runbooks.source IS NOT excluded.source""",
+        [
+            (
+                item["runbook_id"], item["service_id"], item["title"], item["version"],
+                item.get("environment"), json.dumps(item.get("symptoms", [])),
+                item["keywords"], item["body"],
+            )
+            for item in runbooks
         ],
     )
 

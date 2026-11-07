@@ -115,6 +115,26 @@ def render_related_records(records: list[dict]) -> None:
             st.caption(f"Catalog deployment: {record['deployment_id']}")
 
 
+def render_runbook_references(references: list[dict]) -> None:
+    st.markdown("**Synthetic runbook references**")
+    st.caption(
+        "Example checklists for this service only. They are not approved operational instructions; "
+        "verify against the service's real runbook."
+    )
+    if not references:
+        st.caption("No synthetic runbook reference matched this incident.")
+        return
+    for reference in references:
+        st.markdown(f"**{reference['title']}** - {reference['runbook_id']} - {reference['version']}")
+        matched = ", ".join(reference.get("matched_terms", []))
+        symptoms = ", ".join(reference.get("matched_symptoms", []))
+        if matched:
+            st.caption(f"Transcript terms: {matched}")
+        if symptoms:
+            st.caption(f"Matching symptoms: {symptoms}")
+        st.write(reference["body"])
+
+
 def render_speech_controls(incident: dict, summary: str, location: str) -> None:
     """TTS runs only after an explicit click and stays in session memory."""
     if not GNANI_API_KEY:
@@ -176,6 +196,7 @@ def render_incident_result(incident_id: str, allow_tts: bool = False) -> None:
     st.markdown("**Historical matches**")
     render_pattern_evidence(analysis.pattern_result)
     render_related_records(analysis.related_records)
+    render_runbook_references(analysis.runbook_references)
     if allow_tts:
         render_speech_controls(incident, analysis.summary, "result")
     render_report_download(incident, analysis.report, "result")
@@ -455,6 +476,7 @@ with history_tab:
                 st.markdown("**Historical matches**")
                 render_pattern_evidence(analysis.pattern_result)
                 render_related_records(analysis.related_records)
+                render_runbook_references(analysis.runbook_references)
                 if mode == "Live":
                     render_speech_controls(selected_incident, analysis.summary, "history")
                 render_report_download(selected_incident, analysis.report, "history")
