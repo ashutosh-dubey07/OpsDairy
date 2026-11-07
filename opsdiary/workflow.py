@@ -96,13 +96,16 @@ class IncidentWorkflow:
                 )
                 candidate_fields = candidate.model_dump(mode="json", include=set(fields))
                 confirmed_fields = draft.model_dump(mode="json", include=set(fields))
+                candidate_fields["symptoms"] = sorted(candidate_fields["symptoms"] or [])
+                confirmed_fields["symptoms"] = sorted(confirmed_fields["symptoms"] or [])
+                changed_fields = [
+                    field for field in fields
+                    if candidate_fields[field] != confirmed_fields[field]
+                ]
                 review_audit = {
                     "candidate_fields": candidate_fields,
                     "confirmed_fields": confirmed_fields,
-                    "changed_fields": [
-                        field for field in fields
-                        if candidate_fields[field] != confirmed_fields[field]
-                    ],
+                    "changed_fields": changed_fields,
                 }
                 incident_id = save_incident(
                     draft.model_dump(mode="json"),

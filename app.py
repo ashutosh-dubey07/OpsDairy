@@ -15,7 +15,6 @@ from opsdiary.schema import IncidentDraft
 from opsdiary.settings import GNANI_API_KEY
 from opsdiary.workflow import IncidentAnalysis, IncidentWorkflow
 from opsdiary.storage import (
-    get_incident,
     init_db,
     list_incidents,
     list_services,
@@ -190,6 +189,37 @@ def render_speech_controls(incident: dict, summary: str, location: str) -> None:
         st.audio(audio_bytes, format="audio/wav")
 
 
+def _transcribe_audio_file(
+    audio_file,
+    *,
+    stage: str,
+    label: str,
+    default_filename: str,
+    incident_id: str | None = None,
+) -> tuple[dict, str]:
+    audio_bytes = audio_file.getvalue()
+    duration = validate_wav_duration(audio_bytes, max_seconds=30)
+    filename = getattr(audio_file, "name", default_filename) or default_filename
+    content_type = getattr(audio_file, "type", None) or "audio/wav"
+    trace_id = new_trace_id()
+    metadata: dict = {"audio_bytes": len(audio_bytes)}
+    with trace_scope(trace_id):
+        with st.spinner(f"Transcribing {duration:.1f}-second {label}..."):
+            with observed_stage(
+                stage,
+                incident_id=incident_id,
+                provider="gnani-prisma-v2.5",
+                metadata=metadata,
+            ):
+                response = transcribe_prisma_v25(
+                    audio_bytes,
+                    filename=filename,
+                    content_type=content_type,
+                )
+                metadata["request_id"] = response.get("request_id")
+    return response, trace_id
+
+
 def render_incident_timeline(
     analysis,
     *,
@@ -238,26 +268,13 @@ def render_incident_timeline(
             key=f"timeline_transcribe_{prefix}",
         ):
             try:
-                audio_bytes = audio_file.getvalue()
-                duration = validate_wav_duration(audio_bytes, max_seconds=30)
-                filename = getattr(audio_file, "name", "incident-update.wav") or "incident-update.wav"
-                content_type = getattr(audio_file, "type", None) or "audio/wav"
-                trace_id = new_trace_id()
-                metadata: dict = {"audio_bytes": len(audio_bytes)}
-                with trace_scope(trace_id):
-                    with st.spinner(f"Transcribing {duration:.1f}-second update..."):
-                        with observed_stage(
-                            "voice.stt.update",
-                            incident_id=incident["incident_id"],
-                            provider="gnani-prisma-v2.5",
-                            metadata=metadata,
-                        ):
-                            response = transcribe_prisma_v25(
-                                audio_bytes,
-                                filename=filename,
-                                content_type=content_type,
-                            )
-                            metadata["request_id"] = response.get("request_id")
+                response, trace_id = _transcribe_audio_file(
+                    audio_file,
+                    stage="voice.stt.update",
+                    label="update",
+                    default_filename="incident-update.wav",
+                    incident_id=incident["incident_id"],
+                )
                 st.session_state[note_key] = response.get("transcript", "")
                 st.session_state[source_key] = "live-stt"
                 st.session_state[f"timeline_trace_{prefix}"] = trace_id
@@ -500,25 +517,12 @@ def render_live_capture() -> None:
         key="live_transcribe",
     ):
         try:
-            audio_bytes = audio_file.getvalue()
-            duration = validate_wav_duration(audio_bytes, max_seconds=30)
-            filename = getattr(audio_file, "name", "incident.wav") or "incident.wav"
-            content_type = getattr(audio_file, "type", None) or "audio/wav"
-            trace_id = new_trace_id()
-            metadata: dict = {"audio_bytes": len(audio_bytes)}
-            with trace_scope(trace_id):
-                with st.spinner(f"Transcribing {duration:.1f}-second clip..."):
-                    with observed_stage(
-                        "voice.stt",
-                        provider="gnani-prisma-v2.5",
-                        metadata=metadata,
-                    ):
-                        response = transcribe_prisma_v25(
-                            audio_bytes,
-                            filename=filename,
-                            content_type=content_type,
-                        )
-                        metadata["request_id"] = response.get("request_id")
+            response, trace_id = _transcribe_audio_file(
+                audio_file,
+                stage="voice.stt",
+                label="clip",
+                default_filename="incident.wav",
+            )
             st.session_state["live_transcript_editor"] = response.get("transcript", "")
             st.session_state["live_transcription_info"] = {
                 "model": response.get("model", "prisma-v2.5"),

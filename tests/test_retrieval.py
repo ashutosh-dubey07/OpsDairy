@@ -79,6 +79,18 @@ class IncidentRetrievalTests(unittest.TestCase):
             retrieve_runbooks("5xx errors", service_id=None, db_path=self.db_path), []
         )
 
+    def test_catalog_db_pool_runbook_retrieval(self) -> None:
+        matches = retrieve_runbooks(
+            "Catalog API production connection pool exhausted too many connections",
+            service_id="catalog-api",
+            environment="production",
+            symptoms=["db_pool_exhaustion"],
+            db_path=self.db_path,
+        )
+        self.assertTrue(matches)
+        self.assertEqual(matches[0]["runbook_id"], "SYN-RB-CAT-DB")
+        self.assertIn("db_pool_exhaustion", matches[0]["matched_symptoms"])
+
 
 if __name__ == "__main__":
     unittest.main()

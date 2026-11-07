@@ -55,6 +55,8 @@ def validate_wav_duration(audio_bytes: bytes, max_seconds: int = 30) -> float:
 
 def _validate_timbre_wav(audio_bytes: bytes) -> None:
     """Reject malformed PCM or WAV headers that cannot be played reliably."""
+    if not audio_bytes:
+        raise GnaniAPIError("Timbre v2.5 returned an empty audio response.")
     try:
         with wave.open(BytesIO(audio_bytes), "rb") as wav_file:
             channels = wav_file.getnchannels()
@@ -62,7 +64,7 @@ def _validate_timbre_wav(audio_bytes: bytes) -> None:
             sample_rate = wav_file.getframerate()
             frame_count = wav_file.getnframes()
     except (wave.Error, EOFError, ValueError) as exc:
-        raise GnaniAPIError("Timbre v2.5 returned an invalid WAV response.") from exc
+        raise GnaniAPIError(f"Timbre v2.5 returned an invalid WAV response: {exc}") from exc
 
     expected_audio_bytes = frame_count * channels * sample_width
     if (
@@ -160,8 +162,10 @@ def synthesize_timbre_v25(
     except requests.RequestException as exc:
         raise GnaniAPIError(f"Timbre v2.5 request failed: {exc}") from exc
     content_type = response.headers.get("Content-Type", "").split(";", 1)[0].strip().lower()
-    if content_type not in {"audio/wav", "audio/x-wav"}:
-        raise GnaniAPIError("Timbre v2.5 returned a non-WAV response; expected audio/wav.")
+    if content_type not in {"audio/wav", "audio/x-wav", "audio/vnd.wave"}:
+        raise GnaniAPIError(
+            f"Timbre v2.5 returned a non-WAV response ({content_type or 'empty'}); expected audio/wav."
+        )
     audio_bytes = response.content
     _validate_timbre_wav(audio_bytes)
     return audio_bytes

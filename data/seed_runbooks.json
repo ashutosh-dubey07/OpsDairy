@@ -65,7 +65,7 @@
     "title": "Catalog errors and database saturation",
     "version": "synthetic-1",
     "environment": null,
-    "symptoms": ["http_5xx", "database_saturation"],
+    "symptoms": ["http_5xx", "db_pool_exhaustion"],
     "keywords": "catalog 5xx errors database pool saturation connections query",
     "body": "Synthetic reference checklist: compare catalog 5xx rates by endpoint; inspect database connection-pool wait time and query latency; compare affected requests with the incident window and deployed version. Verify every check against the service's approved runbook."
   },

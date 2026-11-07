@@ -101,6 +101,26 @@ class GnaniClientContractTests(unittest.TestCase):
             gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
 
     @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_accepts_vendor_wave_content_type(self, post: Mock) -> None:
+        response = Mock()
+        response.content = make_wav(1, sample_rate=48000)
+        response.headers = {"Content-Type": "audio/vnd.wave;codec=1"}
+        post.return_value = response
+
+        audio = gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+        self.assertEqual(audio, response.content)
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_rejects_empty_audio_response(self, post: Mock) -> None:
+        response = Mock()
+        response.content = b""
+        response.headers = {"Content-Type": "audio/wav"}
+        post.return_value = response
+
+        with self.assertRaisesRegex(gnani_client.GnaniAPIError, "empty audio response"):
+            gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+
+    @patch("opsdiary.gnani_client.requests.post")
     def test_timbre_accepts_supported_wav_sample_rate(self, post: Mock) -> None:
         response = Mock()
         response.content = make_wav(1, sample_rate=16000)

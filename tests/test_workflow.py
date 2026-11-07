@@ -130,6 +130,26 @@ class IncidentWorkflowTests(unittest.TestCase):
         self.assertEqual(audit["changed_fields"], ["severity"])
         self.assertIn("severity: not set -> SEV2", incident.report)
 
+    def test_operator_reordered_symptoms_do_not_mark_changed_field(self) -> None:
+        candidate = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
+        self.assertGreater(len(candidate.symptoms), 1)
+        reordered_symptoms = list(reversed(candidate.symptoms))
+        reviewed = candidate.model_copy(update={"symptoms": reordered_symptoms})
+
+        incident_id = self.workflow.save_reviewed(
+            reviewed, source="local-demo", candidate_data=candidate
+        )
+        incident = self.workflow.analyze(incident_id)
+
+        self.assertIsNotNone(incident)
+        assert incident is not None
+        audit = incident.incident["extraction"]["review_audit"]
+        self.assertNotIn("symptoms", audit["changed_fields"])
+        self.assertEqual(
+            audit["candidate_fields"]["symptoms"],
+            audit["confirmed_fields"]["symptoms"],
+        )
+
     def test_timeline_updates_are_validated_persisted_and_reported(self) -> None:
         draft = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
         incident_id = self.workflow.save_reviewed(draft, source="local-demo")

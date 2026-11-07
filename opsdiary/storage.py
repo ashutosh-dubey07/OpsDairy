@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from opsdiary.settings import DATA_DIR, DATABASE_PATH, PROJECT_ROOT
+from opsdiary.settings import DATABASE_PATH, PROJECT_ROOT
 
 
 def utc_now() -> datetime:
@@ -409,8 +409,8 @@ def save_incident(
     extraction = dict(draft)
     if review_audit is not None:
         extraction["review_audit"] = {**review_audit, "saved_at": created_at}
-    if service_id and environment and deployment_reference:
-        with connect(db_path) as conn:
+    with connect(db_path) as conn:
+        if service_id and environment and deployment_reference:
             deployments = conn.execute(
                 """SELECT deployment_id, version FROM deployments
                    WHERE service_id = ? AND environment = ?
@@ -423,7 +423,6 @@ def save_incident(
                     deployment_id = deployment["deployment_id"]
                     break
 
-    with connect(db_path) as conn:
         conn.execute(
             """INSERT INTO incidents
                (incident_id, created_at, transcript, service_id, environment, severity,
