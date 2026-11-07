@@ -51,6 +51,30 @@ def validate_wav_duration(audio_bytes: bytes, max_seconds: int = 30) -> float:
     return duration
 
 
+def _validate_timbre_wav(audio_bytes: bytes) -> None:
+    """Reject a malformed WAV or one that disagrees with the requested TTS format."""
+    try:
+        with wave.open(BytesIO(audio_bytes), "rb") as wav_file:
+            channels = wav_file.getnchannels()
+            sample_width = wav_file.getsampwidth()
+            sample_rate = wav_file.getframerate()
+            frame_count = wav_file.getnframes()
+    except (wave.Error, EOFError, ValueError) as exc:
+        raise GnaniAPIError("Timbre v2.5 returned an invalid WAV response.") from exc
+
+    expected_audio_bytes = frame_count * channels * sample_width
+    if (
+        channels != 1
+        or sample_width != 2
+        or sample_rate != 48000
+        or frame_count <= 0
+        or expected_audio_bytes > len(audio_bytes)
+    ):
+        raise GnaniAPIError(
+            "Timbre v2.5 WAV does not match the requested audio format."
+        )
+
+
 def _headers(api_key: str | None = None) -> dict[str, str]:
     key = (api_key or GNANI_API_KEY).strip()
     if not key:
@@ -133,8 +157,5 @@ def synthesize_timbre_v25(
     if content_type not in {"audio/wav", "audio/x-wav"}:
         raise GnaniAPIError("Timbre v2.5 returned a non-WAV response; expected audio/wav.")
     audio_bytes = response.content
-    try:
-        wav_duration_seconds(audio_bytes)
-    except ValueError as exc:
-        raise GnaniAPIError("Timbre v2.5 returned an empty or invalid WAV response.") from exc
+    _validate_timbre_wav(audio_bytes)
     return audio_bytes

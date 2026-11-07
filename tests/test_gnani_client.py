@@ -8,13 +8,13 @@ from unittest.mock import Mock, patch
 from opsdiary import gnani_client
 
 
-def make_wav(seconds: int) -> bytes:
+def make_wav(seconds: int, sample_rate: int = 16000) -> bytes:
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav_file:
         wav_file.setnchannels(1)
         wav_file.setsampwidth(2)
-        wav_file.setframerate(16000)
-        wav_file.writeframes(b"\x00\x00" * (seconds * 16000))
+        wav_file.setframerate(sample_rate)
+        wav_file.writeframes(b"\x00\x00" * (seconds * sample_rate))
     return buffer.getvalue()
 
 
@@ -50,7 +50,7 @@ class GnaniClientContractTests(unittest.TestCase):
     @patch("opsdiary.gnani_client.requests.post")
     def test_timbre_v25_uses_documented_json_and_returns_audio_bytes(self, post: Mock) -> None:
         response = Mock()
-        response.content = make_wav(1)
+        response.content = make_wav(1, sample_rate=48000)
         response.headers = {"Content-Type": "audio/wav"}
         post.return_value = response
 
@@ -98,6 +98,28 @@ class GnaniClientContractTests(unittest.TestCase):
         post.return_value = response
 
         with self.assertRaisesRegex(gnani_client.GnaniAPIError, "invalid WAV response"):
+            gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_rejects_wav_that_ignores_requested_sample_rate(self, post: Mock) -> None:
+        response = Mock()
+        response.content = make_wav(1, sample_rate=16000)
+        response.headers = {"Content-Type": "audio/wav"}
+        post.return_value = response
+
+        with self.assertRaisesRegex(gnani_client.GnaniAPIError, "requested audio format"):
+            gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+
+    @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_rejects_frame_count_larger_than_wav_payload(self, post: Mock) -> None:
+        response = Mock()
+        malformed_wav = bytearray(make_wav(1, sample_rate=48000))
+        malformed_wav[40:44] = (10_000_000).to_bytes(4, "little")
+        response.content = bytes(malformed_wav)
+        response.headers = {"Content-Type": "audio/wav"}
+        post.return_value = response
+
+        with self.assertRaisesRegex(gnani_client.GnaniAPIError, "requested audio format"):
             gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
 
     @patch("opsdiary.gnani_client.requests.post")
