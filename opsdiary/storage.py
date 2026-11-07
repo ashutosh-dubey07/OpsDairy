@@ -71,8 +71,19 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
                 extraction_json TEXT NOT NULL DEFAULT '{}',
                 source TEXT NOT NULL DEFAULT 'local-demo'
             );
+            CREATE TABLE IF NOT EXISTS incident_events (
+                event_id TEXT PRIMARY KEY,
+                incident_id TEXT NOT NULL REFERENCES incidents(incident_id) ON DELETE CASCADE,
+                recorded_at TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                note TEXT NOT NULL,
+                source TEXT NOT NULL,
+                trace_id TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS incidents_service_time
                 ON incidents(service_id, environment, created_at);
+            CREATE INDEX IF NOT EXISTS incident_events_timeline
+                ON incident_events(incident_id, recorded_at, event_id);
             CREATE INDEX IF NOT EXISTS deployments_service_time
                 ON deployments(service_id, environment, deployed_at);
 
@@ -327,6 +338,39 @@ def get_incident(incident_id: str, db_path: Path | str = DATABASE_PATH) -> dict 
             "SELECT * FROM incidents WHERE incident_id = ?", (incident_id,)
         ).fetchone()
     return _decode_incident(row) if row else None
+
+
+def add_incident_event(
+    incident_id: str,
+    event_type: str,
+    note: str,
+    source: str,
+    trace_id: str,
+    db_path: Path | str = DATABASE_PATH,
+) -> str:
+    event_id = f"EVT-{uuid4().hex[:10].upper()}"
+    with connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO incident_events
+               (event_id, incident_id, recorded_at, event_type, note, source, trace_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (event_id, incident_id, _iso(utc_now()), event_type, note, source, trace_id),
+        )
+    return event_id
+
+
+def list_incident_events(
+    incident_id: str,
+    db_path: Path | str = DATABASE_PATH,
+) -> list[dict]:
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """SELECT event_id, incident_id, recorded_at, event_type, note, source, trace_id
+               FROM incident_events WHERE incident_id = ?
+               ORDER BY rowid""",
+            (incident_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def list_review_audits(db_path: Path | str = DATABASE_PATH) -> list[dict]:

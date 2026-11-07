@@ -130,6 +130,35 @@ class IncidentWorkflowTests(unittest.TestCase):
         self.assertEqual(audit["changed_fields"], ["severity"])
         self.assertIn("severity: not set -> SEV2", incident.report)
 
+    def test_timeline_updates_are_validated_persisted_and_reported(self) -> None:
+        draft = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
+        incident_id = self.workflow.save_reviewed(draft, source="local-demo")
+
+        update_id = self.workflow.add_timeline_event(
+            incident_id, "update", "Synthetic alert rate is falling.", "local-demo"
+        )
+        resolved_id = self.workflow.add_timeline_event(
+            incident_id, "resolved", "Synthetic checks returned to baseline.", "local-demo"
+        )
+        analysis = self.workflow.analyze(incident_id)
+
+        self.assertIsNotNone(analysis)
+        assert analysis is not None
+        self.assertEqual(
+            [event["event_id"] for event in analysis.timeline_events],
+            [update_id, resolved_id],
+        )
+        self.assertEqual(analysis.timeline_events[1]["event_type"], "resolved")
+        self.assertTrue(analysis.timeline_events[0]["trace_id"])
+        self.assertIn("Synthetic alert rate is falling.", analysis.report)
+        self.assertIn("Synthetic checks returned to baseline.", analysis.report)
+        with self.assertRaisesRegex(ValueError, "Event type"):
+            self.workflow.add_timeline_event(
+                incident_id, "rollback", "Synthetic note", "local-demo"
+            )
+        with self.assertRaisesRegex(ValueError, "Enter an update"):
+            self.workflow.add_timeline_event(incident_id, "update", "  ", "local-demo")
+
     def test_unknown_service_is_rejected_before_persistence(self) -> None:
         draft = IncidentDraft(transcript="Synthetic incident", service_id="unknown-service")
 

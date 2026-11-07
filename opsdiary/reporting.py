@@ -23,6 +23,7 @@ def build_incident_report(
     pattern_result: dict,
     related_records: list[dict] | None = None,
     runbook_references: list[dict] | None = None,
+    timeline_events: list[dict] | None = None,
 ) -> str:
     service_name = service.get("name") if service else "Unknown"
     symptom_labels = [SYMPTOM_LABELS.get(tag, tag) for tag in incident.get("symptoms", [])]
@@ -167,6 +168,21 @@ def build_incident_report(
             lines.extend(["", runbook["body"]])
     else:
         lines.append("No synthetic runbook reference matched this confirmed service and transcript.")
+
+    lines.extend(["", "## Incident timeline", ""])
+    if timeline_events:
+        for event in timeline_events:
+            lines.extend(
+                [
+                    f"### {event['event_type'].title()} - {event['recorded_at']} UTC",
+                    f"Event: {event['event_id']} | Source: {event['source']}",
+                    "",
+                    _quote(event["note"]),
+                    "",
+                ]
+            )
+    else:
+        lines.append("No follow-up updates have been recorded.")
 
     lines.extend(
         [

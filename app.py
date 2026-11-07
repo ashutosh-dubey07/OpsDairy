@@ -190,6 +190,113 @@ def render_speech_controls(incident: dict, summary: str, location: str) -> None:
         st.audio(audio_bytes, format="audio/wav")
 
 
+def render_incident_timeline(
+    analysis,
+    *,
+    location: str,
+    allow_voice: bool,
+) -> None:
+    incident = analysis.incident
+    prefix = f"{location}_{incident['incident_id']}"
+    note_key = f"timeline_note_{prefix}"
+    source_key = f"timeline_source_{prefix}"
+    clear_key = f"timeline_clear_{prefix}"
+    if st.session_state.pop(clear_key, False):
+        st.session_state.pop(note_key, None)
+        st.session_state.pop(source_key, None)
+        st.session_state.pop(f"timeline_mic_{prefix}", None)
+        st.session_state.pop(f"timeline_wav_{prefix}", None)
+
+    st.markdown("**Timeline**")
+    if analysis.timeline_events:
+        for event in analysis.timeline_events:
+            st.markdown(f"**{event['event_type'].title()}** - {event['recorded_at']} UTC")
+            st.caption(f"{event['event_id']} - {event['source']}")
+            st.write(event["note"])
+    else:
+        st.caption("No follow-up updates recorded.")
+
+    if allow_voice:
+        input_source = st.radio(
+            "Update input",
+            ["Text", "Microphone", "WAV file"],
+            horizontal=True,
+            key=f"timeline_input_{prefix}",
+        )
+        audio_file = None
+        if input_source == "Microphone":
+            audio_file = st.audio_input(
+                "Record an update", sample_rate=16000, key=f"timeline_mic_{prefix}"
+            )
+        elif input_source == "WAV file":
+            audio_file = st.file_uploader(
+                "Choose update WAV", type=["wav"], key=f"timeline_wav_{prefix}"
+            )
+        if st.button(
+            "Transcribe update",
+            disabled=audio_file is None,
+            key=f"timeline_transcribe_{prefix}",
+        ):
+            try:
+                audio_bytes = audio_file.getvalue()
+                duration = validate_wav_duration(audio_bytes, max_seconds=30)
+                filename = getattr(audio_file, "name", "incident-update.wav") or "incident-update.wav"
+                content_type = getattr(audio_file, "type", None) or "audio/wav"
+                trace_id = new_trace_id()
+                metadata: dict = {"audio_bytes": len(audio_bytes)}
+                with trace_scope(trace_id):
+                    with st.spinner(f"Transcribing {duration:.1f}-second update..."):
+                        with observed_stage(
+                            "voice.stt.update",
+                            incident_id=incident["incident_id"],
+                            provider="gnani-prisma-v2.5",
+                            metadata=metadata,
+                        ):
+                            response = transcribe_prisma_v25(
+                                audio_bytes,
+                                filename=filename,
+                                content_type=content_type,
+                            )
+                            metadata["request_id"] = response.get("request_id")
+                st.session_state[note_key] = response.get("transcript", "")
+                st.session_state[source_key] = "live-stt"
+                st.session_state[f"timeline_trace_{prefix}"] = trace_id
+                st.session_state[f"timeline_provider_{prefix}"] = response.get(
+                    "request_id", ""
+                )
+            except (ValueError, GnaniAPIError, GnaniConfigurationError) as exc:
+                st.error(f"Update transcription failed: {exc}")
+
+        if request_id := st.session_state.get(f"timeline_provider_{prefix}"):
+            st.caption(f"Prisma request {request_id}; review the text before saving.")
+
+    event_labels = {"Update": "update", "Mitigated": "mitigated", "Resolved": "resolved"}
+    with st.form(f"timeline_form_{prefix}", border=False):
+        selected_event = st.selectbox(
+            "Event", list(event_labels), key=f"timeline_type_{prefix}"
+        )
+        st.text_area("Update note", key=note_key, height=90)
+        save_clicked = st.form_submit_button("Save update")
+
+    if save_clicked:
+        source = st.session_state.get(source_key, "local-demo")
+        trace_id = st.session_state.get(f"timeline_trace_{prefix}") or new_trace_id()
+        try:
+            workflow.add_timeline_event(
+                incident["incident_id"],
+                event_labels[selected_event],
+                st.session_state.get(note_key, ""),
+                source=source,
+                trace_id=trace_id,
+            )
+            st.session_state[clear_key] = True
+            st.session_state.pop(f"timeline_trace_{prefix}", None)
+            st.session_state.pop(f"timeline_provider_{prefix}", None)
+            st.rerun()
+        except ValueError as exc:
+            st.error(f"Could not save update: {exc}")
+
+
 def render_report_download(incident: dict, report: str, location: str) -> None:
     st.download_button(
         "Download incident report",
@@ -200,7 +307,12 @@ def render_report_download(incident: dict, report: str, location: str) -> None:
     )
 
 
-def render_incident_result(incident_id: str, allow_tts: bool = False) -> None:
+def render_incident_result(
+    incident_id: str,
+    allow_tts: bool = False,
+    allow_voice_updates: bool = False,
+    location: str = "result",
+) -> None:
     analysis = workflow.analyze(incident_id)
     if not analysis:
         return
@@ -227,9 +339,12 @@ def render_incident_result(incident_id: str, allow_tts: bool = False) -> None:
     render_pattern_evidence(analysis.pattern_result)
     render_related_records(analysis.related_records)
     render_runbook_references(analysis.runbook_references)
+    render_incident_timeline(
+        analysis, location=location, allow_voice=allow_voice_updates
+    )
     if allow_tts:
-        render_speech_controls(incident, analysis.summary, "result")
-    render_report_download(incident, analysis.report, "result")
+        render_speech_controls(incident, analysis.summary, location)
+    render_report_download(incident, analysis.report, location)
 
 
 def render_review_form(
@@ -423,7 +538,12 @@ def render_live_capture() -> None:
             render_review_form(draft_data, "incident_draft_live", "live", "live-stt")
 
     if incident_id := st.session_state.get("saved_incident_live"):
-        render_incident_result(incident_id, allow_tts=True)
+        render_incident_result(
+            incident_id,
+            allow_tts=True,
+            allow_voice_updates=True,
+            location="live",
+        )
 
 
 st.title("OpsDiary")
@@ -512,6 +632,11 @@ with history_tab:
                 render_pattern_evidence(analysis.pattern_result)
                 render_related_records(analysis.related_records)
                 render_runbook_references(analysis.runbook_references)
+                render_incident_timeline(
+                    analysis,
+                    location="history",
+                    allow_voice=(mode == "Live"),
+                )
                 if mode == "Live":
                     render_speech_controls(selected_incident, analysis.summary, "history")
                 render_report_download(selected_incident, analysis.report, "history")

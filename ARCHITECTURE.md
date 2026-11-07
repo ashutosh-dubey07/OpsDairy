@@ -12,6 +12,7 @@ Streamlit capture/review
   -> SQLite incident store
   -> service/deployment enrichment
   -> exact historical pattern checks + FTS5 incident/runbook retrieval
+  -> local incident timeline (update, mitigated, resolved)
   -> evidence-backed report and optional Timbre speech
 ```
 
@@ -21,12 +22,12 @@ Streamlit capture/review
 | --- | --- | --- |
 | UI and input | Streamlit Demo/Live flows; transcript fields are reviewed before saving | Live mode requires credentials and a deliberate button click |
 | Provider adapter | Prisma v2.5 STT and Timbre v2.5 TTS in `opsdiary/gnani_client.py` | Keys come from environment; audio remains in session memory |
-| Application workflow | `IncidentWorkflow` owns extraction, save validation, enrichment, retrieval, and report assembly | UI delegates incident mutations and analysis to the workflow |
+| Application workflow | `IncidentWorkflow` owns extraction, save validation, enrichment, retrieval, timeline updates, and report assembly | UI delegates incident mutations and analysis to the workflow |
 | Incident schema | Pydantic fields, known-service/symptom checks, transcript evidence, trace ID | Unknown fields stay unset; the operator confirms candidate values |
 | Review feedback | SQLite stores extracted candidates, confirmed values, and changed fields; `opsdiary.feedback` summarizes local correction rates | Corrections are an audit/evaluation signal; the report omits transcript text and does not train extraction |
 | Context | Service catalog and exact deployment-version match from SQLite | A latest deployment is labeled as context, not as incident cause |
 | Retrieval | Exact service/environment/symptom matching plus SQLite FTS5 search over incidents and bundled runbook examples | Results include incident IDs or runbook IDs, matched terms, and source evidence; runbooks require a confirmed service |
-| Persistence | SQLite incidents, services, deployments, synthetic runbooks, and FTS indexes | Seed records are synthetic; raw audio is not stored |
+| Persistence | SQLite incidents, services, deployments, synthetic runbooks, timeline events, and FTS indexes | Seed records are synthetic; raw audio is not stored |
 | Operations | Structured stage logs include trace ID, provider, outcome, latency, request ID, and error type | Logs omit transcript text, audio content, API keys, and exception messages |
 | Quality | Mocked provider contract checks, workflow tests, synthetic extraction evaluation, CI | CI uses no credentials and makes no live provider calls |
 

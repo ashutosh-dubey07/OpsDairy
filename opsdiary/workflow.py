@@ -11,7 +11,15 @@ from opsdiary.retrieval import retrieve_incidents, retrieve_runbooks
 from opsdiary.reporting import build_incident_report
 from opsdiary.schema import IncidentDraft
 from opsdiary.settings import DATABASE_PATH
-from opsdiary.storage import get_incident, save_incident
+from opsdiary.storage import (
+    add_incident_event,
+    get_incident,
+    list_incident_events,
+    save_incident,
+)
+
+
+TIMELINE_EVENT_TYPES = {"update", "mitigated", "resolved"}
 
 
 @dataclass(frozen=True)
@@ -21,6 +29,7 @@ class IncidentAnalysis:
     pattern_result: dict
     related_records: list[dict]
     runbook_references: list[dict]
+    timeline_events: list[dict]
     summary: str
     report: str
 
@@ -104,6 +113,44 @@ class IncidentWorkflow:
                 metadata["incident_id"] = incident_id
                 return incident_id
 
+    def add_timeline_event(
+        self,
+        incident_id: str,
+        event_type: str,
+        note: str,
+        source: str,
+        trace_id: str | None = None,
+    ) -> str:
+        note = note.strip()
+        if event_type not in TIMELINE_EVENT_TYPES:
+            raise ValueError("Event type must be update, mitigated, or resolved.")
+        if not note:
+            raise ValueError("Enter an update before saving it.")
+        if len(note) > 10000:
+            raise ValueError("Update must be 10,000 characters or less.")
+        if source not in {"local-demo", "live-stt"}:
+            raise ValueError("Unknown timeline source.")
+        if not get_incident(incident_id, db_path=self.db_path):
+            raise ValueError(f"Unknown incident: {incident_id}")
+
+        with trace_scope(trace_id) as active_trace_id:
+            metadata = {"source": source}
+            with observed_stage(
+                "incident.timeline.add",
+                incident_id=incident_id,
+                metadata=metadata,
+            ):
+                event_id = add_incident_event(
+                    incident_id,
+                    event_type,
+                    note,
+                    source,
+                    active_trace_id,
+                    db_path=self.db_path,
+                )
+                metadata["event_id"] = event_id
+                return event_id
+
     def analyze(self, incident_id: str) -> IncidentAnalysis | None:
         incident = get_incident(incident_id, db_path=self.db_path)
         if not incident:
@@ -149,9 +196,13 @@ class IncidentWorkflow:
                         limit=3,
                         db_path=self.db_path,
                     )
+                with observed_stage("incident.timeline.read", incident_id=incident_id):
+                    timeline_events = list_incident_events(
+                        incident_id, db_path=self.db_path
+                    )
                 report = build_incident_report(
                     incident, service_context, pattern_result, related_records,
-                    runbook_references,
+                    runbook_references, timeline_events,
                 )
                 return IncidentAnalysis(
                     incident=incident,
@@ -159,6 +210,7 @@ class IncidentWorkflow:
                     pattern_result=pattern_result,
                     related_records=related_records,
                     runbook_references=runbook_references,
+                    timeline_events=timeline_events,
                     summary=self._summary(incident),
                     report=report,
                 )

@@ -29,8 +29,11 @@ Live mode is available only when `GNANI_API_KEY` is configured. Without a key, t
 3. Select **Live**, record a synthetic note with the microphone or upload a synthetic WAV clip no longer than 30 seconds, then press **Transcribe audio**.
 4. Review/edit the transcript, choose **Extract fields**, review the structured fields, and save.
 5. Press **Speak summary** to call Timbre v2.5 and play the returned WAV audio.
+6. In the saved incident or History, add a text update or record/upload a synthetic WAV clip up to 30 seconds. Transcribe explicitly, review the text, select Update/Mitigated/Resolved, then save it to the incident timeline.
 
 Audio inputs are kept in Streamlit session memory for the request and are not written to disk. The Live upload flow accepts WAV so the app can enforce the 30-second duration locally before sending. Use synthetic audio/text only; do not upload production recordings or customer data.
+
+Timeline entries are stored locally with UTC time, event type, source, and trace ID. They are engineer-authored notes; they do not trigger external actions or change infrastructure state.
 
 Optional app configuration (the defaults are shown):
 
