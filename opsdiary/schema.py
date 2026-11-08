@@ -21,7 +21,7 @@ class Severity(str, Enum):
 class IncidentDraft(BaseModel):
     """Candidate incident fields plus the transcript evidence behind them."""
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, str_strip_whitespace=True)
 
     transcript: str = Field(min_length=1, max_length=10000)
     service_id: str | None = Field(default=None, max_length=100)

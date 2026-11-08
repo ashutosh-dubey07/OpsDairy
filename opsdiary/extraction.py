@@ -46,6 +46,19 @@ IMPACT_CUES = re.compile(
     r"\b(?:users?|customers?|orders?|payments?|traffic|impact|fail\w*|down|unavailable)\b",
     re.I,
 )
+NEGATION_BEFORE = re.compile(
+    r"\b(?:no|not|never|without|nahi|nahin|nhi|isn't|aren't|wasn't|weren't|"
+    r"doesn't|don't|didn't)\b(?:[\W_]+\w+){0,3}[\W_]*$",
+    re.I,
+)
+NEGATION_AFTER = re.compile(
+    r"^(?:[\W_]+\w+){0,2}[\W_]+"
+    r"(?:(?:is|are|was|were|has|have|had|do|does|did|been)[\W_]+)?"
+    r"(?:no longer|not|never|nahi|nahin|nhi|resolved|recovered|cleared|fixed|"
+    r"normal|stable|healthy)\b",
+    re.I,
+)
+CLAUSE_BOUNDARIES = re.compile(r"[,;.!?\n]+")
 
 
 def _service_match(transcript: str, services: Iterable[dict]) -> tuple[str | None, str | None]:
@@ -69,13 +82,51 @@ def _evidence_for(pattern: re.Pattern[str], text: str) -> str | None:
     match = pattern.search(text)
     if not match:
         return None
+    return _evidence_for_match(match, text)
+
+
+def _evidence_for_match(match: re.Match[str], text: str) -> str:
+    start = max(0, match.start() - 45)
+    end = min(len(text), match.end() + 45)
+    return text[start:end].strip()
+
+
+def _first_active_match(
+    pattern: re.Pattern[str], text: str, *, check_after: bool = True
+) -> re.Match[str] | None:
+    """Skip clear local negations and resolved/healthy states around a field cue."""
+    for match in pattern.finditer(text):
+        prefix = text[max(0, match.start() - 80):match.start()]
+        prefix = CLAUSE_BOUNDARIES.split(prefix)[-1]
+        if NEGATION_BEFORE.search(prefix):
+            continue
+
+        if check_after:
+            suffix = text[match.end():match.end() + 60]
+            suffix = CLAUSE_BOUNDARIES.split(suffix)[0]
+            if NEGATION_AFTER.match(suffix):
+                continue
+        return match
+    return None
+
+
+def _active_evidence_for(
+    pattern: re.Pattern[str], text: str, *, check_after: bool = True
+) -> str | None:
+    match = _first_active_match(pattern, text, check_after=check_after)
+    if not match:
+        return None
     start = max(0, match.start() - 45)
     end = min(len(text), match.end() + 45)
     return text[start:end].strip()
 
 
 def _impact_sentence(transcript: str) -> str | None:
-    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", transcript) if part.strip()]
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+|[;\n]+", transcript)
+        if part.strip()
+    ]
     for sentence in sentences:
         if IMPACT_CUES.search(sentence):
             return sentence[:400]
@@ -95,14 +146,14 @@ def extract_incident(transcript: str, services: Iterable[dict]) -> IncidentDraft
 
     environment = None
     for candidate, pattern in ENVIRONMENT_PATTERNS:
-        if snippet := _evidence_for(pattern, cleaned):
+        if snippet := _active_evidence_for(pattern, cleaned, check_after=False):
             environment = candidate
             evidence["environment"] = snippet
             break
 
     severity = None
     for candidate, pattern in SEVERITY_PATTERNS:
-        if snippet := _evidence_for(pattern, cleaned):
+        if snippet := _active_evidence_for(pattern, cleaned):
             severity = candidate
             evidence["severity"] = snippet
             break
@@ -110,7 +161,7 @@ def extract_incident(transcript: str, services: Iterable[dict]) -> IncidentDraft
     symptoms: list[str] = []
     symptom_evidence: dict[str, str] = {}
     for tag, pattern in SYMPTOM_PATTERNS.items():
-        snippet = _evidence_for(pattern, cleaned)
+        snippet = _active_evidence_for(pattern, cleaned)
         if snippet:
             symptoms.append(tag)
             symptom_evidence[tag] = snippet
@@ -119,10 +170,10 @@ def extract_incident(transcript: str, services: Iterable[dict]) -> IncidentDraft
             f"{SYMPTOM_LABELS[tag]}: {snippet}" for tag, snippet in symptom_evidence.items()
         )
 
-    version_match = DEPLOYMENT_VERSION_PATTERN.search(cleaned)
+    version_match = _first_active_match(DEPLOYMENT_VERSION_PATTERN, cleaned)
     deployment_reference = version_match.group(1) if version_match else None
     if version_match:
-        evidence["deployment_reference"] = _evidence_for(DEPLOYMENT_VERSION_PATTERN, cleaned) or ""
+        evidence["deployment_reference"] = _evidence_for_match(version_match, cleaned)
 
     impact_summary = _impact_sentence(cleaned)
     if impact_summary:

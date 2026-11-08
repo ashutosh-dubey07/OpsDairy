@@ -33,6 +33,10 @@ class IncidentDraftValidationTests(unittest.TestCase):
         with self.assertRaises(ValidationError):
             IncidentDraft(transcript="A" * 20, impact_summary="x" * 2001)
 
+    def test_rejects_whitespace_only_transcript(self) -> None:
+        with self.assertRaises(ValidationError):
+            IncidentDraft(transcript="  \t  ")
+
 
 if __name__ == "__main__":
     unittest.main()

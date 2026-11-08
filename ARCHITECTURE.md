@@ -29,7 +29,7 @@ Streamlit capture/review
 | Retrieval | Exact service/environment/symptom matching plus SQLite FTS5 search over incidents and bundled runbook examples | Results include incident IDs or runbook IDs, matched terms, and source evidence; runbooks require a confirmed service |
 | Persistence | SQLite incidents, services, deployments, synthetic runbooks, timeline events, and FTS indexes | Seed records are synthetic; raw audio is not stored |
 | Operations | Structured stage logs include trace ID, provider, outcome, latency, request ID, and error type | Logs omit transcript text, audio content, API keys, and exception messages |
-| Quality | Mocked provider contract checks, workflow tests, synthetic extraction evaluation, CI | CI uses no credentials and makes no live provider calls |
+| Quality | Mocked provider contract checks, workflow tests, synthetic extraction evaluation and operator correction summary in the dashboard, CI | CI uses no credentials and makes no live provider calls; evaluation uses only synthetic cases |
 
 ## Deliberate scope
 

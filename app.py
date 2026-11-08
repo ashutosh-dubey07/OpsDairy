@@ -3,6 +3,8 @@
 import streamlit as st
 
 from opsdiary.extraction import SYMPTOM_LABELS
+from opsdiary.evaluation import FIELDS, evaluate
+from opsdiary.feedback import summarize_review_feedback
 from opsdiary.gnani_client import (
     GnaniAPIError,
     GnaniConfigurationError,
@@ -161,6 +163,17 @@ def _format_review_value(field_name: str, value: object) -> str:
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     return str(value)
+
+
+def _reset_review_fields(prefix: str) -> None:
+    for field in ("service", "environment", "severity", "symptoms", "impact", "deployment_ref"):
+        st.session_state.pop(f"{prefix}_{field}", None)
+
+
+def _invalidate_capture_review(prefix: str) -> None:
+    st.session_state.pop(f"incident_draft_{prefix}", None)
+    st.session_state.pop(f"saved_incident_{prefix}", None)
+    _reset_review_fields(prefix)
 
 
 def render_speech_controls(incident: dict, summary: str, location: str) -> None:
@@ -462,6 +475,7 @@ def render_demo_capture() -> None:
     st.subheader("New incident")
     st.caption("Demo uses an editable synthetic transcript. No audio or Gnani calls.")
     if st.button("Run sample incident", key="demo_run_sample"):
+        _reset_review_fields("demo")
         existing = next(
             (
                 item
@@ -486,9 +500,12 @@ def render_demo_capture() -> None:
         value=SAMPLE_TRANSCRIPT,
         height=130,
         key="transcript_input",
+        on_change=_invalidate_capture_review,
+        args=("demo",),
     )
     if st.button("Extract fields", key="demo_extract"):
         try:
+            _reset_review_fields("demo")
             draft = workflow.extract_candidate(transcript_text, trace_id=new_trace_id())
             st.session_state["incident_draft_demo"] = draft.model_dump(mode="json")
         except ValueError as exc:
@@ -531,6 +548,7 @@ def render_live_capture() -> None:
             }
             st.session_state.pop("incident_draft_live", None)
             st.session_state.pop("saved_incident_live", None)
+            _reset_review_fields("live")
         except (ValueError, GnaniAPIError, GnaniConfigurationError) as exc:
             st.error(f"Transcription failed: {exc}")
 
@@ -544,9 +562,12 @@ def render_live_capture() -> None:
             "Transcript",
             key="live_transcript_editor",
             height=140,
+            on_change=_invalidate_capture_review,
+            args=("live",),
         )
         if st.button("Extract fields", key="live_extract"):
             try:
+                _reset_review_fields("live")
                 draft = workflow.extract_candidate(
                     reviewed_transcript,
                     trace_id=transcription_info.get("trace_id") or new_trace_id(),
@@ -566,6 +587,69 @@ def render_live_capture() -> None:
         )
 
 
+def render_evaluation() -> None:
+    result = evaluate()
+    st.subheader("Synthetic extraction evaluation")
+    st.caption(
+        f"{result['cases']} synthetic transcripts. Runs locally and makes no API calls."
+    )
+    rows = []
+    labels = {
+        "service_id": "Service ID",
+        "deployment_reference": "Deployment reference",
+        "evidence_coverage": "Evidence coverage",
+    }
+    for field_name in (*FIELDS, "evidence_coverage"):
+        metric_name = (
+            field_name if field_name == "evidence_coverage" else f"{field_name}_accuracy"
+        )
+        label = labels.get(field_name, field_name.replace("_", " ").title())
+        value = result["metrics"][metric_name]
+        threshold = result["thresholds"][metric_name]
+        rows.append({
+            "Check": label,
+            "Result": f"{value:.0%}",
+            "Gate": f"{threshold:.0%}",
+            "Status": "Pass" if value >= threshold else "Below gate",
+        })
+    st.table(rows)
+    st.write(
+        "All configured gates pass on this synthetic set."
+        if result["passed"]
+        else "One or more evaluation gates failed."
+    )
+    if result["case_mismatches"]:
+        st.table([
+            {
+                "Case": failure["case_id"],
+                "Mismatches": "; ".join(
+                    f"{item['field']}: expected {item['expected']}, got {item['actual']}"
+                    for item in failure["mismatches"]
+                ),
+            }
+            for failure in result["case_mismatches"]
+        ])
+
+    feedback = summarize_review_feedback()
+    st.subheader("Operator corrections")
+    reviewed_incident_count = feedback["reviewed_incidents"]
+    incident_noun = "incident" if reviewed_incident_count == 1 else "incidents"
+    st.caption(
+        f"Review history: {reviewed_incident_count} saved {incident_noun}. "
+        "Correction rates are review signals, not extractor accuracy scores."
+    )
+    feedback_rows = []
+    for field_name, metrics in feedback["fields"].items():
+        rate = metrics["correction_rate"]
+        feedback_rows.append({
+            "Field": field_name.replace("_", " ").title(),
+            "Reviewed": metrics["reviewed"],
+            "Corrected": metrics["corrected"],
+            "Correction rate": f"{rate:.0%}" if rate is not None else "—",
+        })
+    st.table(feedback_rows)
+
+
 st.title("OpsDiary")
 live_available = bool(GNANI_API_KEY)
 if not live_available and st.session_state.get("app_mode") == "Live":
@@ -578,9 +662,15 @@ if not live_available:
 incidents_now = list_incidents(limit=100)
 seed_count = sum(item["source"] == "synthetic-seed" for item in incidents_now)
 saved_count = sum(item["source"] in {"local-demo", "live-stt"} for item in incidents_now)
-st.caption(f"{seed_count} historical records | {len(services)} services | {saved_count} saved incidents")
+seed_noun = "record" if seed_count == 1 else "records"
+service_noun = "service" if len(services) == 1 else "services"
+saved_noun = "incident" if saved_count == 1 else "incidents"
+st.caption(
+    f"{seed_count} historical {seed_noun} | {len(services)} {service_noun} | "
+    f"{saved_count} saved {saved_noun}"
+)
 
-new_tab, history_tab = st.tabs(["Incident", "History"])
+new_tab, history_tab, evaluation_tab = st.tabs(["Incident", "History", "Evaluation"])
 
 with new_tab:
     if mode == "Live":
@@ -646,3 +736,6 @@ with history_tab:
                     allow_voice_updates=(mode == "Live"),
                     location="history",
                 )
+
+with evaluation_tab:
+    render_evaluation()

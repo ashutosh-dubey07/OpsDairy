@@ -64,7 +64,7 @@ Run the synthetic extraction evaluation locally:
 .\.venv\Scripts\python.exe -m opsdiary.evaluation
 ```
 
-The evaluation uses only `data/evaluation_cases.json` and the synthetic service catalog. It checks exact field accuracy and evidence presence; every field gate must reach 90% and evidence coverage must reach 95%. It makes no API calls.
+The Evaluation tab and CLI use only `data/evaluation_cases.json` and the synthetic service catalog. They check exact field accuracy and evidence presence; every field gate must reach 90% and evidence coverage must reach 95%. The test set includes negated/resolved symptoms and corrected severity, environment, and deployment mentions. Results are synthetic checks, not a claim of real-world accuracy, and make no API calls. The tab also shows operator correction counts without treating them as accuracy or training data.
 
 Summarize saved operator corrections locally:
 

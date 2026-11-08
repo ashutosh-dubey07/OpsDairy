@@ -2,8 +2,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from opsdiary.schema import IncidentDraft
-from opsdiary.storage import init_db, list_services
+from opsdiary.storage import init_db, list_incidents, list_services
 from opsdiary.workflow import IncidentWorkflow
 
 
@@ -190,6 +192,28 @@ class IncidentWorkflowTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Unknown incident source"):
             self.workflow.save_reviewed(draft, source="untrusted-source")
+
+    def test_model_copy_with_invalid_severity_is_revalidated_before_save(self) -> None:
+        draft = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
+        invalid_review = draft.model_copy(update={"severity": "SEV9"})
+
+        with self.assertRaises(ValidationError):
+            self.workflow.save_reviewed(invalid_review, source="local-demo")
+
+        saved_local_incidents = [
+            item for item in list_incidents(db_path=self.db_path)
+            if item["source"] == "local-demo"
+        ]
+        self.assertEqual(saved_local_incidents, [])
+
+    def test_invalid_candidate_model_copy_is_revalidated_before_save(self) -> None:
+        candidate = self.workflow.extract_candidate(SAMPLE_TRANSCRIPT)
+        invalid_candidate = candidate.model_copy(update={"environment": "planet"})
+
+        with self.assertRaises(ValidationError):
+            self.workflow.save_reviewed(
+                candidate, source="local-demo", candidate_data=invalid_candidate
+            )
 
 
 if __name__ == "__main__":

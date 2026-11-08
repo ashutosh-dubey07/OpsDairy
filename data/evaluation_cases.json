@@ -108,5 +108,82 @@
       "symptoms": ["latency"],
       "deployment_reference": null
     }
+  },
+  {
+    "case_id": "checkout-explicitly-no-5xx",
+    "transcript": "Checkout API production mein 5xx errors nahi aa rahe.",
+    "expected": {
+      "service_id": "checkout-api",
+      "environment": "production",
+      "severity": null,
+      "symptoms": [],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "search-latency-back-to-normal",
+    "transcript": "Search API staging mein latency normal hai after cache warmup.",
+    "expected": {
+      "service_id": "search-api",
+      "environment": "staging",
+      "severity": null,
+      "symptoms": [],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "auth-negative-login-positive-401",
+    "transcript": "Auth API staging mein login failures nahi hain, par 401 errors aa rahe hain.",
+    "expected": {
+      "service_id": "auth-api",
+      "environment": "staging",
+      "severity": null,
+      "symptoms": ["auth_failures"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "severity-correction-and-negated-auth",
+    "transcript": "Auth API production incident not P1, confirmed P2; no 401 errors.",
+    "expected": {
+      "service_id": "auth-api",
+      "environment": "production",
+      "severity": "SEV2",
+      "symptoms": [],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "environment-correction",
+    "transcript": "Checkout API is not staging; production requests time out.",
+    "expected": {
+      "service_id": "checkout-api",
+      "environment": "production",
+      "severity": null,
+      "symptoms": ["timeouts"],
+      "deployment_reference": null
+    }
+  },
+  {
+    "case_id": "deployment-version-correction",
+    "transcript": "Checkout API production mein deployment v2.8.1 is not deployed; release v2.8.2 caused latency.",
+    "expected": {
+      "service_id": "checkout-api",
+      "environment": "production",
+      "severity": null,
+      "symptoms": ["latency"],
+      "deployment_reference": "v2.8.2"
+    }
+  },
+  {
+    "case_id": "resolved-backlog-and-unreleased-version",
+    "transcript": "Search API dev mein version v1.2.3 was not deployed; there is no queue backlog now.",
+    "expected": {
+      "service_id": "search-api",
+      "environment": "development",
+      "severity": null,
+      "symptoms": [],
+      "deployment_reference": null
+    }
   }
 ]

@@ -71,27 +71,30 @@ class IncidentWorkflow:
         with trace_scope(supplied_trace_id) as active_trace_id:
             metadata = {"source": source}
             with observed_stage("incident.save", metadata=metadata):
-                draft = (
-                    draft_data
+                draft_input = (
+                    draft_data.model_dump(mode="python")
                     if isinstance(draft_data, IncidentDraft)
-                    else IncidentDraft.model_validate(draft_data)
+                    else draft_data
                 )
-                candidate = (
-                    draft
+                draft = IncidentDraft.model_validate(draft_input)
+                candidate_input = (
+                    draft.model_dump(mode="python")
                     if candidate_data is None
                     else (
-                        candidate_data
+                        candidate_data.model_dump(mode="python")
                         if isinstance(candidate_data, IncidentDraft)
-                        else IncidentDraft.model_validate(candidate_data)
+                        else candidate_data
                     )
                 )
-                if draft.service_id and draft.service_id not in self.service_ids:
-                    raise ValueError(f"Unknown service: {draft.service_id}")
-                unknown_symptoms = set(draft.symptoms) - set(SYMPTOM_LABELS)
-                if unknown_symptoms:
-                    raise ValueError(
-                        "Unknown symptom tags: " + ", ".join(sorted(unknown_symptoms))
-                    )
+                candidate = IncidentDraft.model_validate(candidate_input)
+                for submitted in (draft, candidate):
+                    if submitted.service_id and submitted.service_id not in self.service_ids:
+                        raise ValueError(f"Unknown service: {submitted.service_id}")
+                    unknown_symptoms = set(submitted.symptoms) - set(SYMPTOM_LABELS)
+                    if unknown_symptoms:
+                        raise ValueError(
+                            "Unknown symptom tags: " + ", ".join(sorted(unknown_symptoms))
+                        )
                 draft = draft.model_copy(update={"trace_id": active_trace_id})
                 fields = (
                     "service_id", "environment", "severity", "symptoms",
