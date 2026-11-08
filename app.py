@@ -39,6 +39,24 @@ AUTH_IDLE_TIMEOUT_SECONDS = 30 * 60
 AUTH_ABSOLUTE_TIMEOUT_SECONDS = 8 * 60 * 60
 
 
+def _submit_registration() -> None:
+    username = st.session_state.get("registration_username", "")
+    password = st.session_state.get("registration_password", "")
+    confirmation = st.session_state.get("registration_password_confirm", "")
+    st.session_state.pop("registration_password", None)
+    st.session_state.pop("registration_password_confirm", None)
+    if password != confirmation:
+        st.session_state["registration_error"] = "The passphrases do not match."
+        return
+    try:
+        recovery_code = auth.create_initial_user(username, password)
+    except auth.AuthError as exc:
+        st.session_state["registration_error"] = str(exc)
+        return
+    st.session_state.pop("registration_error", None)
+    st.session_state["registration_recovery_code"] = recovery_code
+
+
 def _submit_login() -> None:
     username = st.session_state.get("login_username", "")
     password = st.session_state.get("login_password", "")
@@ -57,6 +75,32 @@ def _submit_login() -> None:
     st.session_state["auth_last_seen"] = now
     st.session_state.pop("login_error", None)
     st.session_state.pop("auth_notice", None)
+
+
+def _submit_recovery() -> None:
+    username = st.session_state.get("recovery_username", "")
+    recovery_code = st.session_state.get("recovery_code", "")
+    password = st.session_state.get("recovery_password", "")
+    confirmation = st.session_state.get("recovery_password_confirm", "")
+    for key in ("recovery_code", "recovery_password", "recovery_password_confirm"):
+        st.session_state.pop(key, None)
+
+    if password != confirmation:
+        st.session_state["recovery_error"] = "The new passphrases do not match."
+        return
+    try:
+        rotated_code = auth.recover_password(username, recovery_code, password)
+    except auth.AuthError as exc:
+        st.session_state["recovery_error"] = str(exc)
+        return
+    if rotated_code is None:
+        st.session_state["recovery_error"] = (
+            "Password reset failed. Check the username and recovery code, or use the local terminal reset."
+        )
+        return
+
+    st.session_state.pop("recovery_error", None)
+    st.session_state["recovery_code_once"] = rotated_code
 
 
 def _sign_out() -> None:
@@ -99,12 +143,38 @@ def _session_is_valid() -> bool:
 
 def require_local_authentication() -> bool:
     """Render the account gate before loading or presenting incident records."""
+    if recovery_code := st.session_state.pop("registration_recovery_code", None):
+        st.success("Local account created. Save this one-time recovery code now:")
+        st.code(recovery_code)
+        st.caption("It is shown once. Store it privately away from this computer.")
+    if recovery_code := st.session_state.pop("recovery_code_once", None):
+        st.success("Password reset. Sign in with your new passphrase; save the rotated recovery code:")
+        st.code(recovery_code)
+        st.caption("Your previous recovery code is invalid. This new code is shown once.")
+
     if not auth.users_exist():
         st.title("OpsDiary")
-        st.subheader("Local account setup")
-        st.write("Create the first operator account from the project PowerShell terminal:")
-        st.code(".\\.venv\\Scripts\\python.exe -m opsdiary.auth create-user", language="powershell")
-        st.caption("The passphrase is entered locally with hidden terminal input. No web signup is enabled.")
+        st.subheader("Create local account")
+        st.caption("One account can be registered on this local installation. Use a passphrase of at least 15 characters.")
+        if error := st.session_state.pop("registration_error", None):
+            st.error(error)
+        with st.form("initial_registration", border=False):
+            st.text_input("Username", key="registration_username", autocomplete="username")
+            st.text_input(
+                "Passphrase",
+                type="password",
+                key="registration_password",
+                autocomplete="new-password",
+            )
+            st.text_input(
+                "Confirm passphrase",
+                type="password",
+                key="registration_password_confirm",
+                autocomplete="new-password",
+            )
+            st.form_submit_button(
+                "Create account", key="registration_submit", on_click=_submit_registration
+            )
         return False
 
     if not _session_is_valid():
@@ -122,7 +192,30 @@ def require_local_authentication() -> bool:
                 key="login_password",
                 autocomplete="current-password",
             )
-            st.form_submit_button("Sign in", on_click=_submit_login)
+            st.form_submit_button("Sign in", key="login_submit", on_click=_submit_login)
+        with st.expander("Forgot password?"):
+            st.caption("Use the one-time recovery code saved during registration. The code is rotated after a successful reset.")
+            if error := st.session_state.pop("recovery_error", None):
+                st.error(error)
+            with st.form("password_recovery", border=False):
+                st.text_input("Account username", key="recovery_username")
+                st.text_input("Recovery code", type="password", key="recovery_code")
+                st.text_input(
+                    "New passphrase",
+                    type="password",
+                    key="recovery_password",
+                    autocomplete="new-password",
+                )
+                st.text_input(
+                    "Confirm new passphrase",
+                    type="password",
+                    key="recovery_password_confirm",
+                    autocomplete="new-password",
+                )
+                st.form_submit_button(
+                    "Reset password", key="recovery_submit", on_click=_submit_recovery
+                )
+            st.caption("If you lost the code, use the local terminal command: `.\\.venv\\Scripts\\python.exe -m opsdiary.auth reset-password`.")
         return False
 
     with st.sidebar:

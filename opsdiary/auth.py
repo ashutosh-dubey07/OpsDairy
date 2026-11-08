@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import re
+import secrets
 import sqlite3
 import sys
 import time
@@ -84,11 +87,13 @@ def create_initial_user(
     username: str,
     password: str,
     db_path: Path | str = DATABASE_PATH,
-) -> None:
-    """Create the first local account; there is intentionally no web signup."""
+) -> str:
+    """Create the first local account and return its one-time recovery code."""
     normalized = normalize_username(username)
     validate_password(password)
     password_hash = _HASHER.hash(password)
+    recovery_code = _new_recovery_code()
+    recovery_code_hash = _recovery_digest(recovery_code)
     created_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
     try:
         with connect(db_path) as conn:
@@ -96,33 +101,105 @@ def create_initial_user(
             if conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
                 raise AuthError("A local account already exists. Use reset-password to change it.")
             conn.execute(
-                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
-                (normalized, password_hash, created_at),
+                """INSERT INTO users
+                   (username, password_hash, recovery_code_hash, created_at)
+                   VALUES (?, ?, ?, ?)""",
+                (normalized, password_hash, recovery_code_hash, created_at),
             )
     except sqlite3.IntegrityError as exc:
         raise AuthError("Could not create the local account.") from exc
+    return recovery_code
 
 
 def reset_password(
     username: str,
     password: str,
     db_path: Path | str = DATABASE_PATH,
-) -> None:
+) -> str:
     """Reset the local password and invalidate active browser sessions."""
     normalized = normalize_username(username)
     validate_password(password)
     password_hash = _HASHER.hash(password)
+    recovery_code = _new_recovery_code()
+    recovery_code_hash = _recovery_digest(recovery_code)
     with connect(db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
         cursor = conn.execute(
             """UPDATE users
-               SET password_hash = ?, auth_version = auth_version + 1
+               SET password_hash = ?, recovery_code_hash = ?, auth_version = auth_version + 1
                WHERE username = ?""",
-            (password_hash, normalized),
+            (password_hash, recovery_code_hash, normalized),
         )
         if cursor.rowcount != 1:
             raise AuthError("No local account matches that username.")
         conn.execute("DELETE FROM auth_login_attempts WHERE username = ?", (normalized,))
+    return recovery_code
+
+
+def _new_recovery_code() -> str:
+    """Generate a 256-bit offline recovery code for one-time use."""
+    return secrets.token_urlsafe(32)
+
+
+def _recovery_digest(recovery_code: str) -> str:
+    return hashlib.sha256(recovery_code.strip().encode("utf-8")).hexdigest()
+
+
+def recover_password(
+    username: str,
+    recovery_code: str,
+    new_password: str,
+    db_path: Path | str = DATABASE_PATH,
+) -> str | None:
+    """Redeem a one-time offline code, rotate it, and revoke all sessions."""
+    try:
+        normalized = normalize_username(username)
+    except AuthError:
+        return None
+    validate_password(new_password)
+
+    attempt_key = f"recovery:{normalized}"
+    now = _now()
+    if _blocked_until(attempt_key, now, db_path) is not None:
+        return None
+
+    if not isinstance(recovery_code, str) or len(recovery_code) > 256:
+        _record_failure(attempt_key, now, db_path)
+        return None
+    provided_digest = _recovery_digest(recovery_code)
+
+    with connect(db_path) as conn:
+        user = conn.execute(
+            "SELECT recovery_code_hash FROM users WHERE username = ?", (normalized,)
+        ).fetchone()
+
+    stored_digest = user["recovery_code_hash"] if user else None
+    expected_digest = stored_digest or ("0" * 64)
+    if not hmac.compare_digest(expected_digest, provided_digest):
+        _record_failure(attempt_key, now, db_path)
+        return None
+
+    new_password_hash = _HASHER.hash(new_password)
+    rotated_code = _new_recovery_code()
+    rotated_digest = _recovery_digest(rotated_code)
+    with connect(db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        current = conn.execute(
+            "SELECT recovery_code_hash FROM users WHERE username = ?", (normalized,)
+        ).fetchone()
+        if not current or current["recovery_code_hash"] != stored_digest:
+            return None
+        conn.execute(
+            """UPDATE users
+               SET password_hash = ?, recovery_code_hash = ?, auth_version = auth_version + 1
+               WHERE username = ? AND recovery_code_hash = ?""",
+            (new_password_hash, rotated_digest, normalized, stored_digest),
+        )
+        conn.execute(
+            "DELETE FROM auth_login_attempts WHERE username IN (?, ?)",
+            (normalized, attempt_key),
+        )
+    return rotated_code
 
 
 def _get_dummy_hash() -> str:
@@ -262,11 +339,14 @@ def main(argv: list[str] | None = None) -> int:
         username = input("Username (3–64 letters, digits, dot, dash or underscore): ").strip()
         password = _prompt_for_password()
         if args.command == "create-user":
-            create_initial_user(username, password)
-            print("Local account created. Restart or refresh OpsDiary to sign in.")
+            recovery_code = create_initial_user(username, password)
+            print("Local account created. Save this one-time recovery code offline:")
+            print(recovery_code)
         else:
-            reset_password(username, password)
-            print("Password changed. Existing browser sessions will be signed out.")
+            recovery_code = reset_password(username, password)
+            print("Password changed. Existing browser sessions were signed out.")
+            print("Save this new one-time recovery code offline:")
+            print(recovery_code)
     except (AuthError, OSError, sqlite3.Error) as exc:
         print(f"Account setup failed: {exc}", file=sys.stderr)
         return 1

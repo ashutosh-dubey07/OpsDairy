@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from opsdiary.settings import DATABASE_PATH, PROJECT_ROOT
 
-DATABASE_SCHEMA_VERSION = 2
+DATABASE_SCHEMA_VERSION = 3
 SQLITE_BUSY_TIMEOUT_MS = 10_000
 
 
@@ -121,6 +121,7 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
             CREATE TABLE IF NOT EXISTS users (
                 username TEXT PRIMARY KEY,
                 password_hash TEXT NOT NULL,
+                recovery_code_hash TEXT,
                 created_at TEXT NOT NULL,
                 auth_version INTEGER NOT NULL DEFAULT 1 CHECK(auth_version >= 1)
             );
@@ -192,6 +193,11 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
             END;
             """
         )
+        user_columns = {
+            row["name"] for row in conn.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "recovery_code_hash" not in user_columns:
+            conn.execute("ALTER TABLE users ADD COLUMN recovery_code_hash TEXT")
         _seed_synthetic_data(conn)
         _seed_synthetic_runbooks(conn)
         _backfill_incident_search(conn)

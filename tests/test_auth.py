@@ -14,7 +14,7 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.db_path = Path(self.temp_dir.name) / "opsdiary.sqlite3"
         init_db(self.db_path)
         self.password = "correct horse battery staple phrase"
-        auth.create_initial_user("Operator_01", self.password, self.db_path)
+        self.recovery_code = auth.create_initial_user("Operator_01", self.password, self.db_path)
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
@@ -22,10 +22,14 @@ class LocalAuthenticationTests(unittest.TestCase):
     def test_database_stores_argon2id_hash_not_plaintext(self) -> None:
         with connect(self.db_path) as conn:
             row = conn.execute(
-                "SELECT password_hash FROM users WHERE username = ?", ("operator_01",)
+                """SELECT password_hash, recovery_code_hash
+                   FROM users WHERE username = ?""",
+                ("operator_01",),
             ).fetchone()
         self.assertTrue(row["password_hash"].startswith("$argon2id$"))
         self.assertNotEqual(row["password_hash"], self.password)
+        self.assertEqual(row["recovery_code_hash"], auth._recovery_digest(self.recovery_code))
+        self.assertNotIn(self.recovery_code, row["recovery_code_hash"])
         with self.assertRaises(sqlite3.OperationalError):
             with connect(self.db_path) as conn:
                 conn.execute("SELECT password FROM users").fetchone()
@@ -66,6 +70,32 @@ class LocalAuthenticationTests(unittest.TestCase):
         )
         self.assertFalse(auth.authenticate("operator_01", self.password, self.db_path).authenticated)
 
+    def test_recovery_code_is_one_time_and_rotates_on_password_reset(self) -> None:
+        new_password = "replacement account passphrase for OpsDiary"
+        rotated_code = auth.recover_password(
+            "operator_01", self.recovery_code, new_password, self.db_path
+        )
+
+        self.assertIsNotNone(rotated_code)
+        self.assertFalse(auth.authenticate("operator_01", self.password, self.db_path).authenticated)
+        self.assertTrue(auth.authenticate("operator_01", new_password, self.db_path).authenticated)
+        self.assertIsNone(
+            auth.recover_password(
+                "operator_01", self.recovery_code, "another replacement passphrase", self.db_path
+            )
+        )
+        second_rotated_code = auth.recover_password(
+            "operator_01", rotated_code or "", "another replacement passphrase", self.db_path
+        )
+        self.assertIsNotNone(second_rotated_code)
+
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT recovery_code_hash FROM users WHERE username = ?", ("operator_01",)
+            ).fetchone()
+        self.assertEqual(len(row["recovery_code_hash"]), 64)
+        self.assertEqual(row["recovery_code_hash"], auth._recovery_digest(second_rotated_code or ""))
+
     def test_passphrase_minimum_is_checked_only_for_account_management(self) -> None:
         with self.assertRaises(auth.AuthError):
             auth.create_initial_user("second_user", "short", self.db_path)
@@ -87,13 +117,42 @@ class LocalAuthenticationTests(unittest.TestCase):
         init_db(self.db_path)
         with connect(self.db_path) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0], incident_count)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 2)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
             tables = {
                 row["name"]
                 for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
         self.assertIn("users", tables)
         self.assertIn("auth_login_attempts", tables)
+
+    def test_version_two_account_migrates_without_losing_login(self) -> None:
+        legacy_password = "legacy account passphrase for migration"
+        legacy_hash = auth._HASHER.hash(legacy_password)
+        with connect(self.db_path) as conn:
+            conn.execute("DROP TABLE auth_login_attempts")
+            conn.execute("DROP TABLE users")
+            conn.execute(
+                """CREATE TABLE users (
+                    username TEXT PRIMARY KEY,
+                    password_hash TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    auth_version INTEGER NOT NULL DEFAULT 1 CHECK(auth_version >= 1)
+                )"""
+            )
+            conn.execute(
+                "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)",
+                ("legacy_user", legacy_hash, "2026-11-08T00:00:00+00:00"),
+            )
+            conn.execute("PRAGMA user_version = 2")
+
+        init_db(self.db_path)
+        with connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT recovery_code_hash FROM users WHERE username = ?", ("legacy_user",)
+            ).fetchone()
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+        self.assertIsNone(row["recovery_code_hash"])
+        self.assertTrue(auth.authenticate("legacy_user", legacy_password, self.db_path).authenticated)
 
 
 if __name__ == "__main__":

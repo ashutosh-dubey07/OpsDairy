@@ -12,22 +12,22 @@ Direct runtime dependencies are pinned in `requirements.txt` to keep CI and loca
 ```powershell
 uv venv .venv --python 3.12
 uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-.\.venv\Scripts\python.exe -m opsdiary.auth create-user
 .\.venv\Scripts\streamlit.exe run app.py
 ```
 
-The account command asks for a username and passphrase in the terminal; passphrase input is hidden. It initializes `data/opsdiary.sqlite3`, creates the local account, and loads the synthetic seed files. The SQLite database is ignored by Git. Set `OPSDIARY_DATABASE_PATH` to another local path when needed. To restore the original synthetic seed set, stop the app and remove the local database.
+On first open, register one local account in the app. Registration initializes `data/opsdiary.sqlite3` and loads the synthetic seed files. The SQLite database is ignored by Git. Set `OPSDIARY_DATABASE_PATH` to another local path when needed. To restore the original synthetic seed set, stop the app and remove the local database.
 
 ## Local sign-in and password handling
 
-OpsDiary has a single local operator account and no public sign-up or default password. Passwords are hashed with Argon2id using `argon2-cffi`; SQLite stores only the encoded salted hash, never the submitted password. New passphrases need at least 15 characters, with no forced character-class rules. Account SQL uses SQLite bound parameters. After five failed attempts for a username, sign-in for that username is throttled for 15 minutes; the UI gives the same failure message for unknown usernames, wrong passwords, and active throttles. A successful sign-in is cleared after 30 minutes idle or 8 hours total, and resetting the password invalidates existing sessions.
+OpsDiary allows one initial local registration, then disables registration and requires sign-in. Passwords are hashed with Argon2id using `argon2-cffi`; SQLite stores only the encoded salted hash, never the submitted password. New passphrases need at least 15 characters, with no forced character-class rules. Account SQL uses SQLite bound parameters. After five failed attempts, login or recovery attempts are throttled for that account for 15 minutes; login errors do not disclose whether the username exists. A successful sign-in expires after 30 minutes idle or 8 hours total.
 
-Use these local terminal commands to manage the account:
+At registration, OpsDiary creates a random one-time recovery code. The code is shown once; only its verifier is stored. Save it offline. **Forgot password?** accepts that code, asks for a new passphrase twice, rotates the code, signs out existing sessions, and requires a normal login. If the code is lost, reset from the local project terminal; this also issues a new one-time code:
 
 ```powershell
-.\.venv\Scripts\python.exe -m opsdiary.auth create-user
 .\.venv\Scripts\python.exe -m opsdiary.auth reset-password
 ```
+
+If you registered with an earlier build that had no recovery code, run this terminal reset once to issue one.
 
 The app binds to `127.0.0.1`. This is a local single-user access boundary, not a multi-user identity system. SQLite is not encrypted by this app; protect the Windows account and local database file. Do not expose Streamlit directly to a network or treat this demo as production-ready. A network deployment needs a reviewed identity provider, HTTPS, access controls, operational monitoring, and a deployment-specific threat review.
 

@@ -13,40 +13,64 @@ class AuthenticationGateUITests(unittest.TestCase):
     def test_setup_login_and_authenticated_dashboard_without_provider_requests(self) -> None:
         child_script = textwrap.dedent(
             """
-            import os
-            from pathlib import Path
             from unittest.mock import patch
 
             from streamlit.testing.v1 import AppTest
-            from opsdiary.auth import create_initial_user, reset_password
-
-            database_path = Path(os.environ["OPSDIARY_DATABASE_PATH"])
             with patch("requests.post", side_effect=AssertionError("unexpected provider request")):
                 app = AppTest.from_file("app.py").run(timeout=30)
-                assert any("create-user" in item.value for item in app.code)
+                assert any(item.key == "registration_username" for item in app.text_input)
 
-                create_initial_user("operator", "test only passphrase for OpsDiary", database_path)
+                app.text_input(key="registration_username").set_value("operator")
+                app.text_input(key="registration_password").set_value("test only passphrase for OpsDiary")
+                app.text_input(key="registration_password_confirm").set_value("different passphrase")
+                app.button(key="registration_submit").click()
+                app.run(timeout=30)
+                assert any("do not match" in item.value for item in app.error)
+
+                app.text_input(key="registration_password").set_value("test only passphrase for OpsDiary")
+                app.text_input(key="registration_password_confirm").set_value("test only passphrase for OpsDiary")
+                app.button(key="registration_submit").click()
                 app.run(timeout=30)
                 assert any(item.key == "login_username" for item in app.text_input)
+                assert len(app.code) > 0, "registration recovery code was not rendered"
+                recovery_code = app.code[0].value
+                assert len(recovery_code) >= 40, "rendered recovery code was unexpectedly short"
+                app.run(timeout=30)
+                assert all(recovery_code not in item.value for item in app.code)
+
                 app.text_input(key="login_username").set_value("operator")
                 app.text_input(key="login_password").set_value("wrong passphrase")
-                app.button[0].click()
+                app.button(key="login_submit").click()
                 app.run(timeout=30)
                 assert any("Sign-in failed" in item.value for item in app.error)
                 assert app.text_input(key="login_password").value == ""
 
                 app.text_input(key="login_username").set_value("operator")
                 app.text_input(key="login_password").set_value("test only passphrase for OpsDiary")
-                app.button[0].click()
+                app.button(key="login_submit").click()
                 app.run(timeout=30)
 
                 assert any(item.key == "app_mode" for item in app.selectbox)
                 assert any("Signed in as operator" in item.value for item in app.caption)
 
-                reset_password("operator", "replacement test passphrase for OpsDiary", database_path)
+                app.button(key="auth_sign_out").click()
                 app.run(timeout=30)
                 assert any(item.key == "login_username" for item in app.text_input)
-                assert not any(item.key == "app_mode" for item in app.selectbox)
+                app.text_input(key="recovery_username").set_value("operator")
+                app.text_input(key="recovery_code").set_value(recovery_code)
+                app.text_input(key="recovery_password").set_value("new passphrase from recovery flow")
+                app.text_input(key="recovery_password_confirm").set_value("new passphrase from recovery flow")
+                app.button(key="recovery_submit").click()
+                app.run(timeout=30)
+                rotated_recovery_code = app.code[0].value
+                assert len(rotated_recovery_code) >= 40
+                app.run(timeout=30)
+                assert all(rotated_recovery_code not in item.value for item in app.code)
+                app.text_input(key="login_username").set_value("operator")
+                app.text_input(key="login_password").set_value("new passphrase from recovery flow")
+                app.button(key="login_submit").click()
+                app.run(timeout=30)
+                assert any(item.key == "app_mode" for item in app.selectbox)
             print("setup, sign-in, and authenticated dashboard passed")
             """
         )
