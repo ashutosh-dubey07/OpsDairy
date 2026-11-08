@@ -10,7 +10,7 @@ from uuid import uuid4
 
 from opsdiary.settings import DATABASE_PATH, PROJECT_ROOT
 
-DATABASE_SCHEMA_VERSION = 1
+DATABASE_SCHEMA_VERSION = 2
 SQLITE_BUSY_TIMEOUT_MS = 10_000
 
 
@@ -117,6 +117,18 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
                 keywords TEXT NOT NULL DEFAULT '',
                 body TEXT NOT NULL,
                 source TEXT NOT NULL DEFAULT 'synthetic-runbook'
+            );
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                auth_version INTEGER NOT NULL DEFAULT 1 CHECK(auth_version >= 1)
+            );
+            CREATE TABLE IF NOT EXISTS auth_login_attempts (
+                username TEXT PRIMARY KEY,
+                failure_count INTEGER NOT NULL CHECK(failure_count >= 0),
+                window_started_at REAL NOT NULL,
+                blocked_until REAL
             );
             CREATE VIRTUAL TABLE IF NOT EXISTS runbook_search USING fts5(
                 runbook_id UNINDEXED,

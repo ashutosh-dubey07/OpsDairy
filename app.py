@@ -1,7 +1,10 @@
 """OpsDiary: minimal synthetic demo and explicitly triggered Gnani live mode."""
 
+import time
+
 import streamlit as st
 
+from opsdiary import auth
 from opsdiary.extraction import SYMPTOM_LABELS
 from opsdiary.evaluation import FIELDS, evaluate
 from opsdiary.feedback import summarize_review_feedback
@@ -31,9 +34,101 @@ SEVERITY_OPTIONS = ["SEV1", "SEV2", "SEV3", "SEV4"]
 
 st.set_page_config(page_title="OpsDiary", page_icon=None, layout="wide")
 init_db()
-services = list_services()
-service_by_id = {item["service_id"]: item for item in services}
-workflow = IncidentWorkflow(services)
+
+AUTH_IDLE_TIMEOUT_SECONDS = 30 * 60
+AUTH_ABSOLUTE_TIMEOUT_SECONDS = 8 * 60 * 60
+
+
+def _submit_login() -> None:
+    username = st.session_state.get("login_username", "")
+    password = st.session_state.get("login_password", "")
+    result = auth.authenticate(username, password)
+    # Streamlit session state is server-side; clear the transient password field
+    # immediately after the submit callback has consumed it.
+    st.session_state.pop("login_password", None)
+    if not result.authenticated:
+        st.session_state["login_error"] = True
+        return
+
+    now = time.monotonic()
+    st.session_state["auth_username"] = result.username
+    st.session_state["auth_version"] = result.auth_version
+    st.session_state["auth_created_at"] = now
+    st.session_state["auth_last_seen"] = now
+    st.session_state.pop("login_error", None)
+    st.session_state.pop("auth_notice", None)
+
+
+def _sign_out() -> None:
+    st.session_state.clear()
+    st.session_state["auth_notice"] = "You have been signed out."
+
+
+def _clear_expired_session(message: str) -> None:
+    st.session_state.clear()
+    st.session_state["auth_notice"] = message
+
+
+def _session_is_valid() -> bool:
+    username = st.session_state.get("auth_username")
+    version = st.session_state.get("auth_version")
+    created_at = st.session_state.get("auth_created_at")
+    last_seen = st.session_state.get("auth_last_seen")
+    if not username or not isinstance(version, int):
+        return False
+    if not isinstance(created_at, (int, float)) or not isinstance(last_seen, (int, float)):
+        _clear_expired_session("Your session ended. Sign in to continue.")
+        return False
+
+    now = time.monotonic()
+    if (
+        now - last_seen >= AUTH_IDLE_TIMEOUT_SECONDS
+        or now - created_at >= AUTH_ABSOLUTE_TIMEOUT_SECONDS
+    ):
+        _clear_expired_session("Your session expired. Sign in to continue.")
+        return False
+
+    current_version = auth.get_auth_version(username)
+    if current_version is None or current_version != version:
+        _clear_expired_session("Your session ended. Sign in to continue.")
+        return False
+
+    st.session_state["auth_last_seen"] = now
+    return True
+
+
+def require_local_authentication() -> bool:
+    """Render the account gate before loading or presenting incident records."""
+    if not auth.users_exist():
+        st.title("OpsDiary")
+        st.subheader("Local account setup")
+        st.write("Create the first operator account from the project PowerShell terminal:")
+        st.code(".\\.venv\\Scripts\\python.exe -m opsdiary.auth create-user", language="powershell")
+        st.caption("The passphrase is entered locally with hidden terminal input. No web signup is enabled.")
+        return False
+
+    if not _session_is_valid():
+        st.title("OpsDiary")
+        st.subheader("Sign in")
+        if notice := st.session_state.get("auth_notice"):
+            st.caption(notice)
+        if st.session_state.pop("login_error", False):
+            st.error("Sign-in failed. Check your credentials or wait before trying again.")
+        with st.form("local_sign_in", border=False):
+            st.text_input("Username", key="login_username", autocomplete="username")
+            st.text_input(
+                "Passphrase",
+                type="password",
+                key="login_password",
+                autocomplete="current-password",
+            )
+            st.form_submit_button("Sign in", on_click=_submit_login)
+        return False
+
+    with st.sidebar:
+        st.caption(f"Signed in as {st.session_state['auth_username']}")
+        st.button("Sign out", key="auth_sign_out", on_click=_sign_out)
+    return True
 
 
 def render_enrichment(result: dict | None) -> None:
@@ -649,6 +744,13 @@ def render_evaluation() -> None:
         })
     st.table(feedback_rows)
 
+
+if not require_local_authentication():
+    st.stop()
+
+services = list_services()
+service_by_id = {item["service_id"]: item for item in services}
+workflow = IncidentWorkflow(services)
 
 st.title("OpsDiary")
 live_available = bool(GNANI_API_KEY)
