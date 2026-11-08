@@ -10,8 +10,10 @@ from uuid import uuid4
 
 from opsdiary.settings import DATABASE_PATH, PROJECT_ROOT
 
-DATABASE_SCHEMA_VERSION = 3
+DATABASE_SCHEMA_VERSION = 4
 SQLITE_BUSY_TIMEOUT_MS = 10_000
+MAX_ASSISTANT_QUERY_CHARS = 2_000
+MAX_ASSISTANT_ANSWER_CHARS = 12_000
 
 
 def utc_now() -> datetime:
@@ -131,6 +133,21 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
                 window_started_at REAL NOT NULL,
                 blocked_until REAL
             );
+            CREATE TABLE IF NOT EXISTS assistant_interactions (
+                interaction_id TEXT PRIMARY KEY,
+                actor_username TEXT NOT NULL REFERENCES users(username),
+                created_at TEXT NOT NULL,
+                query TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                intent TEXT NOT NULL,
+                source TEXT NOT NULL,
+                evidence_json TEXT NOT NULL DEFAULT '[]',
+                trace_id TEXT NOT NULL,
+                CHECK(length(query) BETWEEN 1 AND 2000),
+                CHECK(length(answer) BETWEEN 1 AND 12000)
+            );
+            CREATE INDEX IF NOT EXISTS assistant_interactions_actor_time
+                ON assistant_interactions(actor_username, created_at DESC);
             CREATE VIRTUAL TABLE IF NOT EXISTS runbook_search USING fts5(
                 runbook_id UNINDEXED,
                 title,
@@ -360,6 +377,83 @@ def list_incidents(limit: int = 50, db_path: Path | str = DATABASE_PATH) -> list
             "SELECT * FROM incidents ORDER BY created_at DESC LIMIT ?", (limit,)
         ).fetchall()
     return [_decode_incident(row) for row in rows]
+
+
+def save_assistant_interaction(
+    actor_username: str,
+    query: str,
+    answer: str,
+    intent: str,
+    source: str,
+    evidence: list[dict],
+    trace_id: str,
+    db_path: Path | str = DATABASE_PATH,
+) -> str:
+    """Persist one submitted question and its deterministic answer snapshot."""
+    normalized_query = query.strip() if isinstance(query, str) else ""
+    if not 1 <= len(normalized_query) <= MAX_ASSISTANT_QUERY_CHARS:
+        raise ValueError("Question must be between 1 and 2,000 characters.")
+    if not isinstance(answer, str) or not 1 <= len(answer) <= MAX_ASSISTANT_ANSWER_CHARS:
+        raise ValueError("Answer is empty or exceeds the storage limit.")
+    if not isinstance(actor_username, str) or not actor_username.strip():
+        raise ValueError("A signed-in account is required to save a question.")
+    for label, value, max_length in (
+        ("intent", intent, 64),
+        ("source", source, 64),
+        ("trace ID", trace_id, 64),
+    ):
+        if not isinstance(value, str) or not 1 <= len(value) <= max_length:
+            raise ValueError(f"Invalid {label}.")
+    if not isinstance(evidence, list) or len(evidence) > 20:
+        raise ValueError("Evidence must be a list of at most 20 references.")
+
+    interaction_id = f"ASK-{uuid4().hex[:12].upper()}"
+    with connect(db_path) as conn:
+        conn.execute(
+            """INSERT INTO assistant_interactions
+               (interaction_id, actor_username, created_at, query, answer, intent,
+                source, evidence_json, trace_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                interaction_id,
+                actor_username.strip().casefold(),
+                _iso(utc_now()),
+                normalized_query,
+                answer,
+                intent,
+                source,
+                json.dumps(evidence, ensure_ascii=False),
+                trace_id,
+            ),
+        )
+    return interaction_id
+
+
+def list_assistant_interactions(
+    actor_username: str,
+    limit: int = 50,
+    db_path: Path | str = DATABASE_PATH,
+) -> list[dict]:
+    """List a signed-in user's saved questions, newest first."""
+    if not isinstance(actor_username, str) or not actor_username.strip():
+        return []
+    bounded_limit = max(1, min(int(limit), 100))
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """SELECT interaction_id, actor_username, created_at, query, answer,
+                      intent, source, evidence_json, trace_id
+               FROM assistant_interactions
+               WHERE actor_username = ?
+               ORDER BY created_at DESC, rowid DESC
+               LIMIT ?""",
+            (actor_username.strip().casefold(), bounded_limit),
+        ).fetchall()
+    interactions = []
+    for row in rows:
+        item = dict(row)
+        item["evidence"] = json.loads(item.pop("evidence_json"))
+        interactions.append(item)
+    return interactions
 
 
 def get_incident(incident_id: str, db_path: Path | str = DATABASE_PATH) -> dict | None:

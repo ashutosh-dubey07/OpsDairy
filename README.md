@@ -31,6 +31,22 @@ If you registered with an earlier build that had no recovery code, run this term
 
 The app binds to `127.0.0.1`. This is a local single-user access boundary, not a multi-user identity system. SQLite is not encrypted by this app; protect the Windows account and local database file. Do not expose Streamlit directly to a network or treat this demo as production-ready. A network deployment needs a reviewed identity provider, HTTPS, access controls, operational monitoring, and a deployment-specific threat review.
 
+## Ask OpsDiary
+
+The **Ask** tab answers greetings and common product questions with fixed local rules. Other questions search saved incident text using SQLite FTS5 and return matching incident IDs and evidence snippets. It does not call an LLM, Prisma, or Timbre; Ask consumes no Gnani credits. Every submitted Ask question and answer is stored in `assistant_interactions` with its local account, timestamp, intent, source, trace ID, and evidence references. The UI displays the latest 50 exchanges; the database retains all of them. This includes greetings and no-match answers.
+
+## Quality checks
+
+Install the pinned development checks and run the same gates used in CI:
+
+```powershell
+uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
+.\.venv\Scripts\ruff.exe check .
+.\.venv\Scripts\pip-audit.exe --local --cache-dir .cache/pip-audit
+python -m unittest discover -s tests -v
+python -m opsdiary.evaluation
+```
+
 ## Demo mode
 
 Demo is the default and remains available without credentials. **Run sample incident** saves the built-in synthetic transcript and shows enrichment and historical matches in one step; it reuses the existing matching sample instead of creating duplicates. For the manual path, edit a synthetic Hinglish transcript, extract candidate fields, review them, and save. A deployment version from the transcript is linked only when the service, environment, and exact version match the synthetic catalog. The latest catalog deployment is shown separately as context, without claiming it caused the incident. No audio is recorded or sent in Demo. History can be searched, and a selected incident can be downloaded as a Markdown brief with supporting records.

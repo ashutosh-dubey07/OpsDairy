@@ -117,13 +117,14 @@ class LocalAuthenticationTests(unittest.TestCase):
         init_db(self.db_path)
         with connect(self.db_path) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM incidents").fetchone()[0], incident_count)
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 4)
             tables = {
                 row["name"]
                 for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
             }
         self.assertIn("users", tables)
         self.assertIn("auth_login_attempts", tables)
+        self.assertIn("assistant_interactions", tables)
 
     def test_version_two_account_migrates_without_losing_login(self) -> None:
         legacy_password = "legacy account passphrase for migration"
@@ -150,7 +151,7 @@ class LocalAuthenticationTests(unittest.TestCase):
             row = conn.execute(
                 "SELECT recovery_code_hash FROM users WHERE username = ?", ("legacy_user",)
             ).fetchone()
-            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 3)
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 4)
         self.assertIsNone(row["recovery_code_hash"])
         self.assertTrue(auth.authenticate("legacy_user", legacy_password, self.db_path).authenticated)
 

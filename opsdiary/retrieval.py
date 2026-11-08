@@ -11,7 +11,7 @@ from opsdiary.storage import connect
 STOP_WORDS = {
     "a", "an", "and", "are", "after", "before", "by", "for", "from", "in", "is",
     "it", "ke", "ki", "ka", "ko", "me", "mein", "nahi", "not", "of", "on", "or",
-    "the", "this", "to", "with", "aur", "hai", "hain", "tha", "thi", "the", "ho",
+    "the", "this", "to", "with", "aur", "hai", "hain", "tha", "thi", "ho",
     "raha", "rahe", "rahi", "issue", "incident", "service", "users", "user",
 }
 TOKEN_PATTERN = re.compile(r"[\w]+", re.UNICODE)
@@ -52,28 +52,32 @@ def retrieve_incidents(
     if not terms:
         return []
 
-    clauses = ["incident_search MATCH ?"]
-    params: list[object] = [" OR ".join(f'"{term}"' for term in terms)]
-    if service_id:
-        clauses.append("incident_search.service_id = ?")
-        params.append(service_id)
-    if environment:
-        clauses.append("incident_search.environment = ?")
-        params.append(environment)
-    if exclude_incident_id:
-        clauses.append("incident_search.incident_id != ?")
-        params.append(exclude_incident_id)
+    filter_service_id = service_id or None
+    filter_environment = environment or None
+    filter_excluded_id = exclude_incident_id or None
+    params: list[object] = [
+        " OR ".join(f'"{term}"' for term in terms),
+        filter_service_id,
+        filter_service_id,
+        filter_environment,
+        filter_environment,
+        filter_excluded_id,
+        filter_excluded_id,
+    ]
     bounded_limit = max(1, min(int(limit), 20))
     params.append(min(bounded_limit * 5, 100))
 
     with connect(db_path) as conn:
         rows = conn.execute(
-            f"""SELECT i.incident_id, i.created_at, i.transcript, i.service_id,
+            """SELECT i.incident_id, i.created_at, i.transcript, i.service_id,
                        i.environment, i.symptoms_json, i.deployment_id, i.source,
                        bm25(incident_search, 0.0, 1.0, 0.6, 0.0, 0.0, 0.2) AS rank
                 FROM incident_search
                 JOIN incidents AS i ON i.incident_id = incident_search.incident_id
-                WHERE {' AND '.join(clauses)}
+                WHERE incident_search MATCH ?
+                  AND (? IS NULL OR incident_search.service_id = ?)
+                  AND (? IS NULL OR incident_search.environment = ?)
+                  AND (? IS NULL OR incident_search.incident_id != ?)
                 ORDER BY rank ASC, i.created_at DESC
                 LIMIT ?""",
             params,
@@ -123,22 +127,26 @@ def retrieve_runbooks(
     if not service_id or not terms:
         return []
 
-    clauses = ["runbook_search MATCH ?", "runbook_search.service_id = ?"]
-    params: list[object] = [" OR ".join(f'"{term}"' for term in terms), service_id]
-    if environment:
-        clauses.append("(runbook_search.environment = '' OR runbook_search.environment = ?)")
-        params.append(environment)
+    filter_environment = environment or None
+    params: list[object] = [
+        " OR ".join(f'"{term}"' for term in terms),
+        service_id,
+        filter_environment,
+        filter_environment,
+    ]
     bounded_limit = max(1, min(int(limit), 10))
     params.append(min(bounded_limit * 5, 50))
 
     with connect(db_path) as conn:
         rows = conn.execute(
-            f"""SELECT r.runbook_id, r.service_id, r.title, r.version, r.environment,
+            """SELECT r.runbook_id, r.service_id, r.title, r.version, r.environment,
                        r.symptoms_json, r.keywords, r.body, r.source,
                        bm25(runbook_search, 0.0, 2.0, 1.0, 0.8, 0.0, 0.0) AS rank
                 FROM runbook_search
                 JOIN runbooks AS r ON r.runbook_id = runbook_search.runbook_id
-                WHERE {' AND '.join(clauses)}
+                WHERE runbook_search MATCH ?
+                  AND runbook_search.service_id = ?
+                  AND (? IS NULL OR runbook_search.environment = '' OR runbook_search.environment = ?)
                 ORDER BY rank ASC
                 LIMIT ?""",
             params,

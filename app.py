@@ -1,10 +1,12 @@
 """OpsDiary: minimal synthetic demo and explicitly triggered Gnani live mode."""
 
 import time
+import sqlite3
 
 import streamlit as st
 
 from opsdiary import auth
+from opsdiary.assistant import answer_question
 from opsdiary.extraction import SYMPTOM_LABELS
 from opsdiary.evaluation import FIELDS, evaluate
 from opsdiary.feedback import summarize_review_feedback
@@ -21,8 +23,10 @@ from opsdiary.settings import GNANI_API_KEY
 from opsdiary.workflow import IncidentAnalysis, IncidentWorkflow
 from opsdiary.storage import (
     init_db,
+    list_assistant_interactions,
     list_incidents,
     list_services,
+    save_assistant_interaction,
 )
 
 SAMPLE_TRANSCRIPT = (
@@ -838,6 +842,55 @@ def render_evaluation() -> None:
     st.table(feedback_rows)
 
 
+def render_assistant_tab() -> None:
+    st.subheader("Ask OpsDiary")
+    st.caption("Fixed local answers and SQLite incident search. No AI or Gnani requests.")
+
+    query = st.chat_input(
+        "Ask about OpsDiary or saved incidents",
+        max_chars=2_000,
+        key="assistant_query_input",
+    )
+    if query:
+        trace_id = new_trace_id()
+        try:
+            with trace_scope(trace_id):
+                metadata = {"source": "local-rules-and-sqlite-fts5"}
+                with observed_stage("assistant.query", metadata=metadata):
+                    reply = answer_question(query)
+                    save_assistant_interaction(
+                        actor_username=st.session_state["auth_username"],
+                        query=query,
+                        answer=reply.answer,
+                        intent=reply.intent,
+                        source=reply.source,
+                        evidence=reply.evidence,
+                        trace_id=trace_id,
+                    )
+        except ValueError as exc:
+            st.error(str(exc))
+        except (sqlite3.Error, OSError):
+            st.error("Could not save this exchange to the local database. Try again later.")
+        else:
+            st.rerun()
+
+    interactions = list_assistant_interactions(
+        actor_username=st.session_state["auth_username"], limit=50
+    )
+    if not interactions:
+        st.caption("Try “hi”, “Will this use Gnani credits?”, or a service and symptom from local history.")
+        return
+
+    for interaction in reversed(interactions):
+        with st.chat_message("user"):
+            st.text(interaction["query"])
+        with st.chat_message("assistant"):
+            st.text(interaction["answer"])
+            if evidence := interaction["evidence"]:
+                evidence_ids = ", ".join(item["incident_id"] for item in evidence)
+                st.caption(f"Evidence records: {evidence_ids}")
+
+
 if not require_local_authentication():
     st.stop()
 
@@ -865,7 +918,9 @@ st.caption(
     f"{saved_count} saved {saved_noun}"
 )
 
-new_tab, history_tab, evaluation_tab = st.tabs(["Incident", "History", "Evaluation"])
+new_tab, history_tab, ask_tab, evaluation_tab = st.tabs(
+    ["Incident", "History", "Ask", "Evaluation"]
+)
 
 with new_tab:
     if mode == "Live":
@@ -931,6 +986,9 @@ with history_tab:
                     allow_voice_updates=(mode == "Live"),
                     location="history",
                 )
+
+with ask_tab:
+    render_assistant_tab()
 
 with evaluation_tab:
     render_evaluation()

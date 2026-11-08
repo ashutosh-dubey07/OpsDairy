@@ -16,6 +16,7 @@ class AuthenticationGateUITests(unittest.TestCase):
             from unittest.mock import patch
 
             from streamlit.testing.v1 import AppTest
+            from opsdiary.storage import list_assistant_interactions
             with patch("requests.post", side_effect=AssertionError("unexpected provider request")):
                 app = AppTest.from_file("app.py").run(timeout=30)
                 assert any(item.key == "registration_username" for item in app.text_input)
@@ -52,6 +53,12 @@ class AuthenticationGateUITests(unittest.TestCase):
 
                 assert any(item.key == "app_mode" for item in app.selectbox)
                 assert any("Signed in as operator" in item.value for item in app.caption)
+                app.chat_input(key="assistant_query_input").set_value("hii")
+                app.run(timeout=30)
+                saved_queries = list_assistant_interactions("operator")
+                assert saved_queries[0]["query"] == "hii"
+                assert saved_queries[0]["intent"] == "greeting"
+                assert saved_queries[0]["source"] == "local-faq"
 
                 app.button(key="auth_sign_out").click()
                 app.run(timeout=30)
@@ -78,7 +85,7 @@ class AuthenticationGateUITests(unittest.TestCase):
         with TemporaryDirectory() as directory:
             env = os.environ.copy()
             env["OPSDIARY_DATABASE_PATH"] = str(Path(directory) / "app-auth.sqlite3")
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 -- Fixed test script and trusted interpreter path.
                 [sys.executable, "-c", child_script],
                 cwd=PROJECT_ROOT,
                 env=env,
