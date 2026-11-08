@@ -4,6 +4,6 @@
 .vscode/
 __pycache__/
 *.py[cod]
-data/*.sqlite3
-data/*.db
+data/*.sqlite3*
+data/*.db*
 .streamlit/secrets.toml

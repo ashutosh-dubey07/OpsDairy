@@ -43,8 +43,8 @@ Install the pinned development checks and run the same gates used in CI:
 uv pip install --python .venv\Scripts\python.exe -r requirements-dev.txt
 .\.venv\Scripts\ruff.exe check .
 .\.venv\Scripts\pip-audit.exe --local --cache-dir .cache/pip-audit
-python -m unittest discover -s tests -v
-python -m opsdiary.evaluation
+.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m opsdiary.evaluation
 ```
 
 ## Demo mode

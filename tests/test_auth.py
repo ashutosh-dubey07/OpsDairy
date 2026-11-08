@@ -70,6 +70,28 @@ class LocalAuthenticationTests(unittest.TestCase):
         )
         self.assertFalse(auth.authenticate("operator_01", self.password, self.db_path).authenticated)
 
+    def test_terminal_password_reset_clears_recovery_lockout(self) -> None:
+        fixed_now = 1_800_000_000.0
+        with patch("opsdiary.auth._now", return_value=fixed_now):
+            for _ in range(auth.MAX_LOGIN_FAILURES):
+                self.assertIsNone(
+                    auth.recover_password(
+                        "operator_01", "incorrect recovery code", "valid replacement passphrase", self.db_path
+                    )
+                )
+
+            new_recovery_code = auth.reset_password(
+                "operator_01", "terminal reset replacement passphrase", self.db_path
+            )
+            rotated_code = auth.recover_password(
+                "operator_01",
+                new_recovery_code,
+                "recovered replacement passphrase",
+                self.db_path,
+            )
+
+        self.assertIsNotNone(rotated_code)
+
     def test_recovery_code_is_one_time_and_rotates_on_password_reset(self) -> None:
         new_password = "replacement account passphrase for OpsDiary"
         rotated_code = auth.recover_password(

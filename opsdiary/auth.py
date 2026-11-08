@@ -132,7 +132,10 @@ def reset_password(
         )
         if cursor.rowcount != 1:
             raise AuthError("No local account matches that username.")
-        conn.execute("DELETE FROM auth_login_attempts WHERE username = ?", (normalized,))
+        conn.execute(
+            "DELETE FROM auth_login_attempts WHERE username IN (?, ?)",
+            (normalized, f"recovery:{normalized}"),
+        )
     return recovery_code
 
 

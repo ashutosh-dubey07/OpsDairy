@@ -15,8 +15,10 @@ class AuthenticationGateUITests(unittest.TestCase):
             """
             from unittest.mock import patch
 
+            from opsdiary import settings
             from streamlit.testing.v1 import AppTest
             from opsdiary.storage import list_assistant_interactions
+            settings.GNANI_API_KEY = ""
             with patch("requests.post", side_effect=AssertionError("unexpected provider request")):
                 app = AppTest.from_file("app.py").run(timeout=30)
                 assert any(item.key == "registration_username" for item in app.text_input)
@@ -51,7 +53,8 @@ class AuthenticationGateUITests(unittest.TestCase):
                 app.button(key="login_submit").click()
                 app.run(timeout=30)
 
-                assert any(item.key == "app_mode" for item in app.selectbox)
+                mode_select = next(item for item in app.selectbox if item.key == "app_mode")
+                assert mode_select.options == ["Demo"]
                 assert any("Signed in as operator" in item.value for item in app.caption)
                 app.chat_input(key="assistant_query_input").set_value("hii")
                 app.run(timeout=30)
