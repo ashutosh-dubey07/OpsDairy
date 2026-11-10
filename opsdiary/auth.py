@@ -10,6 +10,7 @@ import secrets
 import sqlite3
 import sys
 import time
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from getpass import getpass
@@ -27,7 +28,7 @@ from opsdiary.settings import DATABASE_PATH
 from opsdiary.storage import connect, init_db
 
 USERNAME_PATTERN = re.compile(r"\A[a-zA-Z0-9][a-zA-Z0-9._-]{2,63}\Z")
-MIN_PASSWORD_LENGTH = 15
+MIN_PASSWORD_LENGTH = 8
 MAX_PASSWORD_LENGTH = 1024
 MAX_LOGIN_FAILURES = 5
 FAILURE_WINDOW_SECONDS = 15 * 60
@@ -60,10 +61,30 @@ def normalize_username(username: str) -> str:
 def validate_password(password: str) -> None:
     if not isinstance(password, str):
         raise AuthError("Password is required.")
-    if len(password) < MIN_PASSWORD_LENGTH:
-        raise AuthError(f"Use a passphrase with at least {MIN_PASSWORD_LENGTH} characters.")
+    unmet = [label for label, satisfied in password_requirement_status(password) if not satisfied]
+    if unmet:
+        raise AuthError("Password does not meet all requirements: " + "; ".join(unmet) + ".")
     if len(password) > MAX_PASSWORD_LENGTH:
         raise AuthError(f"Password must be no more than {MAX_PASSWORD_LENGTH} characters.")
+
+
+def password_requirement_status(password: str) -> list[tuple[str, bool]]:
+    """Return the account password rules in display order with live status."""
+    value = password if isinstance(password, str) else ""
+    categories = [unicodedata.category(character) for character in value]
+    return [
+        (f"At least {MIN_PASSWORD_LENGTH} characters", len(value) >= MIN_PASSWORD_LENGTH),
+        ("One uppercase letter", "Lu" in categories),
+        ("One lowercase letter", "Ll" in categories),
+        ("One number", "Nd" in categories),
+        (
+            "One symbol",
+            any(
+                category[0] not in {"L", "N"} and not character.isspace()
+                for character, category in zip(value, categories, strict=True)
+            ),
+        ),
+    ]
 
 
 def users_exist(db_path: Path | str = DATABASE_PATH) -> bool:
@@ -322,10 +343,10 @@ def authenticate(
 
 
 def _prompt_for_password() -> str:
-    password = getpass("New passphrase (input hidden): ")
-    confirmation = getpass("Confirm passphrase: ")
+    password = getpass("New password (input hidden): ")
+    confirmation = getpass("Confirm password: ")
     if password != confirmation:
-        raise AuthError("The passphrases do not match.")
+        raise AuthError("The passwords do not match.")
     validate_password(password)
     return password
 

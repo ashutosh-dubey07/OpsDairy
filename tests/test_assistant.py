@@ -23,7 +23,16 @@ class DeterministicAssistantTests(unittest.TestCase):
         self.assertIn("ready hai", greeting.answer)
         self.assertEqual(credits.intent, "credit_usage")
         self.assertIn("credit use zero", credits.answer)
+        self.assertNotIn("Live mode", credits.answer)
         retrieve.assert_not_called()
+
+    def test_incident_workflow_faq_describes_live_capture_and_review(self) -> None:
+        reply = answer_question("How do I record an incident?")
+
+        self.assertEqual(reply.intent, "incident_workflow")
+        self.assertIn("synthetic Hinglish clip", reply.answer)
+        self.assertIn("transcript review", reply.answer)
+        self.assertNotIn("synthetic note", reply.answer)
 
     def test_unmatched_question_gets_explicit_local_search_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -52,7 +61,7 @@ class DeterministicAssistantTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "opsdiary.sqlite3"
             init_db(db_path)
-            create_initial_user("operator", "test-only local account passphrase", db_path)
+            create_initial_user("operator", "TestOnlyPass8!", db_path)
             question = "x'); DROP TABLE incidents; --"
             interaction_id = save_assistant_interaction(
                 actor_username="OPERATOR",
@@ -79,7 +88,7 @@ class DeterministicAssistantTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             db_path = Path(directory) / "opsdiary.sqlite3"
             init_db(db_path)
-            create_initial_user("operator", "test-only local account passphrase", db_path)
+            create_initial_user("operator", "TestOnlyPass8!", db_path)
             with self.assertRaisesRegex(ValueError, "2,000 characters"):
                 save_assistant_interaction(
                     actor_username="operator",

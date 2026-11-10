@@ -1,43 +1,49 @@
 # OpsDiary architecture
 
-OpsDiary is a local-first, voice-led incident capture demo for Hinglish-speaking on-call engineers. All bundled records and examples are synthetic. The app does not predict outages or execute remediation.
+OpsDiary is a local-first, voice-led incident capture and history tool for Hinglish-speaking SRE and on-call engineers. Incident audio and bundled records are synthetic in this MVP. OpsDiary does not predict outages, identify root cause, or execute remediation.
 
 ## Request flow
 
 ```text
-Loopback-only Streamlit sign-in (local account)
-  -> deterministic Ask FAQs or SQLite FTS5 evidence search
-  -> saved query/answer audit record scoped to the signed-in account
-  -> authenticated incident capture/review
-  -> Prisma adapter (explicit Live action only)
-  -> IncidentWorkflow
-  -> Pydantic validation and human review
-  -> SQLite incident store
-  -> service/deployment enrichment
-  -> exact historical pattern checks + FTS5 incident/runbook retrieval
-  -> local incident timeline (update, mitigated, resolved)
-  -> evidence-backed report and optional Timbre speech
+Loopback-only Streamlit application
+  -> first-run local registration or sign-in
+  -> explicit microphone recording or WAV upload
+  -> explicit Prisma v2.5 transcription request
+  -> transcript review and edit
+  -> deterministic extraction of candidate incident fields
+  -> operator review and edit
+  -> Pydantic validation and SQLite save
+  -> service and deployment context enrichment
+  -> historical pattern matches and SQLite FTS5 evidence retrieval
+  -> timeline and Markdown incident report
+  -> optional, explicit Timbre v2.5 summary speech
+
+Ask tab
+  -> fixed local FAQ rules
+  -> otherwise SQLite FTS5 search of saved incidents
+  -> answer and evidence references saved in SQLite
 ```
 
 ## Implemented layers
 
-| Layer | Implementation | Trust boundary |
+| Layer | Implementation | Boundary |
 | --- | --- | --- |
-| Local access | One-time first-run registration; Argon2id password hashes; parameterized username queries; login and recovery throttling; idle and absolute session expiry; password reset revokes sessions | Recovery code is generated once, stored as a verifier, consumed and rotated on reset; local terminal reset is the fallback; Streamlit binds to loopback |
-| Ask assistant | Exact local FAQ rules for common greetings/product questions; lexical incident search through SQLite FTS5; query, answer, intent, trace ID, actor and evidence references persisted | No LLM/STT/TTS calls; no-match replies are explicit; every submitted exchange is stored in local SQLite |
-| UI and input | Streamlit Demo/Live flows; transcript fields are reviewed before saving | Live mode requires credentials and a deliberate button click |
-| Provider adapter | Prisma v2.5 STT and Timbre v2.5 TTS in `opsdiary/gnani_client.py` | Keys come from environment; audio remains in session memory |
-| Application workflow | `IncidentWorkflow` owns extraction, save validation, enrichment, retrieval, timeline updates, and report assembly | UI delegates incident mutations and analysis to the workflow |
-| Incident schema | Pydantic fields, known-service/symptom checks, transcript evidence, trace ID | Unknown fields stay unset; the operator confirms candidate values |
-| Review feedback | SQLite stores extracted candidates, confirmed values, and changed fields; `opsdiary.feedback` summarizes local correction rates | Corrections are an audit/evaluation signal; the report omits transcript text and does not train extraction |
-| Context | Service catalog and exact deployment-version match from SQLite | A latest deployment is labeled as context, not as incident cause |
-| Retrieval | Exact service/environment/symptom matching plus SQLite FTS5 search over incidents and bundled runbook examples | Results include incident IDs or runbook IDs, matched terms, and source evidence; runbooks require a confirmed service |
-| Persistence | SQLite local account/recovery verifiers, throttling state, Ask exchanges, incidents, services, deployments, synthetic runbooks, timeline events, and FTS indexes | Account passwords and raw recovery codes are not stored in plaintext; Ask content is retained locally; seed records are synthetic; raw audio is not stored; the SQLite file itself is not encrypted |
-| Operations | Structured stage logs include trace ID, provider, outcome, latency, request ID, and error type | Logs omit transcript text, audio content, API keys, and exception messages |
-| Quality | Mocked provider contract checks, workflow tests, synthetic extraction evaluation and operator correction summary in the dashboard, CI | CI uses no credentials and makes no live provider calls; evaluation uses only synthetic cases |
+| Local access | One local account, Argon2id password hashes, parameterized SQLite queries, persistent login throttling, one-time recovery code, idle and absolute session expiry | No team accounts, MFA, hosted identity, or email recovery. The recovery code is shown once; only its verifier is stored. |
+| Presentation | Streamlit pages for incident capture, history, Ask, and synthetic evaluation | The app binds to loopback. Loading or rendering a page does not call Gnani. |
+| Voice input | Microphone recording or WAV upload, limited to 30 seconds and 10 MB | Audio stays in request/session memory and is not written to disk by OpsDiary. Only an explicit button sends it to Gnani. |
+| Provider adapter | Prisma v2.5 REST transcription and Timbre v2.5 REST speech in `opsdiary/gnani_client.py` | `GNANI_API_KEY` is read from the process environment or ignored `.env`. Requests use documented endpoints and payloads. |
+| Incident workflow | `IncidentWorkflow` coordinates rule-based extraction, validation, save, enrichment, retrieval, timeline, and report assembly | Extracted values remain candidates until the engineer reviews and saves them. |
+| Incident schema | Pydantic model constrains fields, transcript evidence, service identifiers, severity, symptoms, and environment | Unsupported or invalid values fail validation before persistence. |
+| Context and retrieval | Local service/deployment catalog, exact version matching, deterministic service/environment/symptom matching, SQLite FTS5 incident and runbook search | Deployment context is not evidence of causation. Search matches include supporting records; similarity is not a shared-cause claim. |
+| Ask | Fixed answers for greetings and common questions; local FTS5 search for other queries | Ask does not call an LLM, Prisma, or Timbre. Every submitted question and answer is stored locally, scoped to the signed-in account. |
+| Persistence | SQLite stores incidents, review audit data, service and deployment fixtures, timeline events, runbooks, Ask exchanges, authentication state, and FTS indexes | Bundled records are synthetic. The database is local and is not encrypted by the app. |
+| Observability | Structured stage logs include trace ID, outcome, latency, request ID, and byte counts | Logs omit transcripts, audio bytes, passwords, API keys, and provider exception text. |
+| Quality | Unit and workflow tests, mocked provider-contract tests, synthetic extraction evaluation, Ruff, and CI dependency audit | Verification uses synthetic fixtures and mocked API responses; it does not prove live account access or production readiness. |
 
-## Deliberate scope
+## Scope and operational limits
 
-The current demo is a local single-operator application with no write actions into external systems. Its initial local registration and recovery-code flow do not provide multi-user identity, MFA, encrypted database storage, email recovery, or a network deployment security boundary. Do not expose the Streamlit process directly to a network. Team-level RBAC and MCP tool servers belong with a multi-user deployment or an actual service connector. A cache is unnecessary for the current small local dataset. Extraction and analysis use deterministic code, so a generative system prompt and prompt-injection classifier are not part of this path. Runbook records are synthetic examples, not operational guidance. Semantic retrieval should be evaluated against real, permission-safe examples before adding a vector index; FTS5 is the current lexical baseline.
+This is a single-operator local MVP, not a production deployment. Do not use production incident data, customer information, or production credentials. Do not expose the Streamlit process to a network. Protect the Windows account and local SQLite file; the app does not encrypt database contents or define a retention/deletion policy.
 
-The next integration should be chosen from the challenge demo's available evidence sources. Any external write action must be previewed and explicitly confirmed by the engineer.
+The service catalog, runbooks, incidents, and evaluation transcripts are synthetic. Runbook examples are not approved operational instructions. Historical pattern matching and FTS5 retrieval are deterministic evidence lookup, not outage prediction or automated diagnosis. FTS5 is the current retrieval baseline; add an external vector store or service connector only if a validated use case requires it.
+
+All current integrations are read-only or local. Any future external write action must show its target and payload and require an explicit operator confirmation before submission.

@@ -13,7 +13,7 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.temp_dir = TemporaryDirectory()
         self.db_path = Path(self.temp_dir.name) / "opsdiary.sqlite3"
         init_db(self.db_path)
-        self.password = "correct horse battery staple phrase"
+        self.password = "CorrectHorse8!"
         self.recovery_code = auth.create_initial_user("Operator_01", self.password, self.db_path)
 
     def tearDown(self) -> None:
@@ -36,7 +36,7 @@ class LocalAuthenticationTests(unittest.TestCase):
 
     def test_login_success_and_failures_have_non_enumerating_result(self) -> None:
         success = auth.authenticate("OPERATOR_01", self.password, self.db_path)
-        wrong_password = auth.authenticate("operator_01", "not the passphrase", self.db_path)
+        wrong_password = auth.authenticate("operator_01", "not the password", self.db_path)
         unknown_user = auth.authenticate("somebody_else", self.password, self.db_path)
 
         self.assertTrue(success.authenticated)
@@ -55,17 +55,17 @@ class LocalAuthenticationTests(unittest.TestCase):
         with patch("opsdiary.auth._now", return_value=fixed_now):
             for _ in range(auth.MAX_LOGIN_FAILURES):
                 self.assertFalse(
-                    auth.authenticate("operator_01", "wrong passphrase", self.db_path).authenticated
+                    auth.authenticate("operator_01", "wrong password", self.db_path).authenticated
                 )
             self.assertFalse(
                 auth.authenticate("operator_01", self.password, self.db_path).authenticated
             )
 
-        auth.reset_password("operator_01", "a new safe passphrase for OpsDiary", self.db_path)
+        auth.reset_password("operator_01", "NewSafePass8!", self.db_path)
         self.assertEqual(auth.get_auth_version("operator_01", self.db_path), 2)
         self.assertTrue(
             auth.authenticate(
-                "operator_01", "a new safe passphrase for OpsDiary", self.db_path
+                "operator_01", "NewSafePass8!", self.db_path
             ).authenticated
         )
         self.assertFalse(auth.authenticate("operator_01", self.password, self.db_path).authenticated)
@@ -76,24 +76,24 @@ class LocalAuthenticationTests(unittest.TestCase):
             for _ in range(auth.MAX_LOGIN_FAILURES):
                 self.assertIsNone(
                     auth.recover_password(
-                        "operator_01", "incorrect recovery code", "valid replacement passphrase", self.db_path
+                        "operator_01", "incorrect recovery code", "ValidReplace8!", self.db_path
                     )
                 )
 
             new_recovery_code = auth.reset_password(
-                "operator_01", "terminal reset replacement passphrase", self.db_path
+                "operator_01", "TerminalReset8!", self.db_path
             )
             rotated_code = auth.recover_password(
                 "operator_01",
                 new_recovery_code,
-                "recovered replacement passphrase",
+                "Recovered8!",
                 self.db_path,
             )
 
         self.assertIsNotNone(rotated_code)
 
     def test_recovery_code_is_one_time_and_rotates_on_password_reset(self) -> None:
-        new_password = "replacement account passphrase for OpsDiary"
+        new_password = "Replacement8!"
         rotated_code = auth.recover_password(
             "operator_01", self.recovery_code, new_password, self.db_path
         )
@@ -103,11 +103,11 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.assertTrue(auth.authenticate("operator_01", new_password, self.db_path).authenticated)
         self.assertIsNone(
             auth.recover_password(
-                "operator_01", self.recovery_code, "another replacement passphrase", self.db_path
+                "operator_01", self.recovery_code, "AnotherReplacement8!", self.db_path
             )
         )
         second_rotated_code = auth.recover_password(
-            "operator_01", rotated_code or "", "another replacement passphrase", self.db_path
+            "operator_01", rotated_code or "", "AnotherReplacement8!", self.db_path
         )
         self.assertIsNotNone(second_rotated_code)
 
@@ -118,7 +118,7 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.assertEqual(len(row["recovery_code_hash"]), 64)
         self.assertEqual(row["recovery_code_hash"], auth._recovery_digest(second_rotated_code or ""))
 
-    def test_passphrase_minimum_is_checked_only_for_account_management(self) -> None:
+    def test_password_requirements_are_checked_only_for_account_management(self) -> None:
         with self.assertRaises(auth.AuthError):
             auth.create_initial_user("second_user", "short", self.db_path)
         # Login still handles old or malformed stored credentials generically.
@@ -126,7 +126,7 @@ class LocalAuthenticationTests(unittest.TestCase):
 
     def test_create_initial_user_is_one_time_only(self) -> None:
         with self.assertRaisesRegex(auth.AuthError, "already exists"):
-            auth.create_initial_user("second_user", "a second account passphrase", self.db_path)
+            auth.create_initial_user("second_user", "AnotherAccount8!", self.db_path)
         self.assertTrue(auth.users_exist(self.db_path))
 
     def test_schema_upgrade_preserves_seeded_incident_records(self) -> None:
@@ -149,7 +149,7 @@ class LocalAuthenticationTests(unittest.TestCase):
         self.assertIn("assistant_interactions", tables)
 
     def test_version_two_account_migrates_without_losing_login(self) -> None:
-        legacy_password = "legacy account passphrase for migration"
+        legacy_password = "LegacyAccount8!"
         legacy_hash = auth._HASHER.hash(legacy_password)
         with connect(self.db_path) as conn:
             conn.execute("DROP TABLE auth_login_attempts")

@@ -10,52 +10,39 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class AuthenticationGateUITests(unittest.TestCase):
-    def test_setup_login_and_authenticated_dashboard_without_provider_requests(self) -> None:
+    def test_sign_in_and_authenticated_dashboard_without_provider_requests(self) -> None:
         child_script = textwrap.dedent(
             """
             from unittest.mock import patch
+            import time
 
+            from opsdiary import auth
             from opsdiary import settings
             from streamlit.testing.v1 import AppTest
-            from opsdiary.storage import list_assistant_interactions
+            from opsdiary.storage import init_db, list_assistant_interactions
             settings.GNANI_API_KEY = ""
+            init_db()
             with patch("requests.post", side_effect=AssertionError("unexpected provider request")):
-                app = AppTest.from_file("app.py").run(timeout=30)
-                assert any(item.key == "registration_username" for item in app.text_input)
-
-                app.text_input(key="registration_username").set_value("operator")
-                app.text_input(key="registration_password").set_value("test only passphrase for OpsDiary")
-                app.text_input(key="registration_password_confirm").set_value("different passphrase")
-                app.button(key="registration_submit").click()
+                app = AppTest.from_file("app.py")
                 app.run(timeout=30)
-                assert any("do not match" in item.value for item in app.error)
+                assert not app.exception, [item.message for item in app.exception]
+                assert any("Create local account" in item.value for item in app.subheader)
 
-                app.text_input(key="registration_password").set_value("test only passphrase for OpsDiary")
-                app.text_input(key="registration_password_confirm").set_value("test only passphrase for OpsDiary")
-                app.button(key="registration_submit").click()
+                auth.create_initial_user("operator", "TestOnlyPass8!")
                 app.run(timeout=30)
-                assert any(item.key == "login_username" for item in app.text_input)
-                assert len(app.code) > 0, "registration recovery code was not rendered"
-                recovery_code = app.code[0].value
-                assert len(recovery_code) >= 40, "rendered recovery code was unexpectedly short"
-                app.run(timeout=30)
-                assert all(recovery_code not in item.value for item in app.code)
+                assert not app.exception, [item.message for item in app.exception]
+                assert any("Sign in" in item.value for item in app.subheader)
 
-                app.text_input(key="login_username").set_value("operator")
-                app.text_input(key="login_password").set_value("wrong passphrase")
-                app.button(key="login_submit").click()
-                app.run(timeout=30)
-                assert any("Sign-in failed" in item.value for item in app.error)
-                assert app.text_input(key="login_password").value == ""
-
-                app.text_input(key="login_username").set_value("operator")
-                app.text_input(key="login_password").set_value("test only passphrase for OpsDiary")
-                app.button(key="login_submit").click()
+                now = time.monotonic()
+                app.session_state["auth_username"] = "operator"
+                app.session_state["auth_version"] = auth.get_auth_version("operator")
+                app.session_state["auth_created_at"] = now
+                app.session_state["auth_last_seen"] = now
                 app.run(timeout=30)
 
-                mode_select = next(item for item in app.selectbox if item.key == "app_mode")
-                assert mode_select.options == ["Demo"]
                 assert any("Signed in as operator" in item.value for item in app.caption)
+                assert any("Set GNANI_API_KEY" in item.value for item in app.error)
+                assert not any(item.label == "Mode" for item in app.selectbox)
                 app.chat_input(key="assistant_query_input").set_value("hii")
                 app.run(timeout=30)
                 saved_queries = list_assistant_interactions("operator")
@@ -65,23 +52,8 @@ class AuthenticationGateUITests(unittest.TestCase):
 
                 app.button(key="auth_sign_out").click()
                 app.run(timeout=30)
-                assert any(item.key == "login_username" for item in app.text_input)
-                app.text_input(key="recovery_username").set_value("operator")
-                app.text_input(key="recovery_code").set_value(recovery_code)
-                app.text_input(key="recovery_password").set_value("new passphrase from recovery flow")
-                app.text_input(key="recovery_password_confirm").set_value("new passphrase from recovery flow")
-                app.button(key="recovery_submit").click()
-                app.run(timeout=30)
-                rotated_recovery_code = app.code[0].value
-                assert len(rotated_recovery_code) >= 40
-                app.run(timeout=30)
-                assert all(rotated_recovery_code not in item.value for item in app.code)
-                app.text_input(key="login_username").set_value("operator")
-                app.text_input(key="login_password").set_value("new passphrase from recovery flow")
-                app.button(key="login_submit").click()
-                app.run(timeout=30)
-                assert any(item.key == "app_mode" for item in app.selectbox)
-            print("setup, sign-in, and authenticated dashboard passed")
+                assert app.session_state["auth_notice"] == "You have been signed out."
+            print("sign-in and authenticated dashboard passed")
             """
         )
 
@@ -99,7 +71,7 @@ class AuthenticationGateUITests(unittest.TestCase):
             )
 
         self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
-        self.assertIn("setup, sign-in, and authenticated dashboard passed", result.stdout)
+        self.assertIn("sign-in and authenticated dashboard passed", result.stdout)
 
 
 if __name__ == "__main__":

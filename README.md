@@ -2,13 +2,13 @@
 
 OpsDiary is a local-first incident capture and history tool for Hinglish-speaking SRE and on-call engineers. It turns a short incident note into a reviewable record, adds context from a local service and deployment catalog, and finds related records with their supporting evidence.
 
-The project is an MVP for the Gnani AI Great Indian AI Internship Challenge. Voice services are optional. Demo mode works without an API key and uses synthetic data. OpsDiary does not predict outages, determine root cause, or change infrastructure.
+The project is an MVP for the Gnani AI Great Indian AI Internship Challenge. Incident capture is voice-first and uses Prisma v2.5; `GNANI_API_KEY` is required. Historical fixtures and evaluation cases are synthetic. OpsDiary does not predict outages, determine root cause, or change infrastructure.
 
 ## Current implementation status
 
 | Component | Status |
 | --- | --- |
-| Local incident flow | Demo capture, extraction, human review, saving, enrichment, history, timeline, and reports are implemented. |
+| Local incident flow | Live voice capture, transcript review, extraction, saving, enrichment, history, timeline, and reports are implemented. |
 | Ask | Fixed FAQs and local FTS5 incident search are implemented. Questions and answers are saved in SQLite. |
 | Authentication | One local account, Argon2id password hashes, offline recovery code, throttling, and expiring sessions are implemented. |
 | Gnani integration | Prisma v2.5 and Timbre v2.5 adapters and explicit UI actions are implemented. Repository verification uses mocked provider responses; it does not establish live API behavior. |
@@ -19,32 +19,32 @@ The project is an MVP for the Gnani AI Great Indian AI Internship Challenge. Voi
 
 | Area | Behavior |
 | --- | --- |
-| Incident capture | Start from synthetic text or, in Live mode, explicitly request transcription of a short WAV clip. |
+| Incident capture | Record or upload a short WAV clip and explicitly request Prisma transcription. Synthetic data is used for history and evaluation. |
 | Review | Extract candidate service, environment, severity, symptoms, impact, and deployment version. The engineer can edit the fields before saving. |
 | Service context | Match a confirmed service to the local catalog. Link a deployment only when service and environment match and the version matches after normalizing a leading `v` and letter case. The latest deployment is labeled as context, not as cause. |
 | Historical context | Show deterministic service/environment/symptom matches and SQLite FTS5 lexical matches with record IDs, matched terms, and evidence snippets. |
 | Incident updates | Store engineer-authored update, mitigated, and resolved events on the local timeline. These events do not trigger external actions. |
 | Reports | View or download an incident brief with its reviewed fields and supporting records. |
 | Ask | Answer greetings and common product questions with fixed local rules. Other questions search saved incident text and show matching evidence. Every question and answer is stored in SQLite. |
-| Speech | In Live mode, explicitly request a spoken incident summary from Timbre and play the returned WAV audio. |
+| Speech | Explicitly request a spoken incident summary from Timbre and play the returned WAV audio. |
 
 Ask does not call an LLM, Prisma, or Timbre. Its fixed answers and local search use no Gnani credits. Each submitted question and returned answer is stored in `assistant_interactions`, with the local username, timestamp, intent, source, trace ID, and evidence references. The Ask screen displays the latest 50 exchanges; the database retains all of them. Similar wording in historical records is evidence of a text match; it does not establish a shared cause or predict a future outage. Timbre reads the app's deterministic summary aloud; it does not create or validate the incident analysis.
 
 ## User workflow
 
-### Demo
+### Local setup
 
 1. Register the one local account on first use, then sign in.
-2. In **Incident**, run the built-in synthetic sample or enter/edit a synthetic Hinglish note.
-3. Extract candidate fields, review or correct them, and save the incident.
-4. Use **History** to search records, inspect enrichment and supporting matches, add timeline updates, or download a brief.
-5. Use **Ask** for a fixed FAQ answer or to search saved incident text.
+2. Set `GNANI_API_KEY` as described below and restart Streamlit.
+3. In **Incident**, record or upload a synthetic Hinglish voice clip, then request transcription.
+4. Review the transcript, extract candidate fields, correct them, and save the incident.
+5. Use **History** to inspect seeded synthetic incidents, supporting matches, timelines, and reports. Use **Ask** for fixed answers or local incident search.
 
-Demo is the default. It does not record audio or call Gnani. The built-in sample is reused when it already exists, so clicking it repeatedly does not create duplicate sample incidents.
+There is no Demo capture mode. The bundled incidents and evaluation transcripts remain synthetic fixtures; recording or uploading audio never sends it to Gnani until an explicit action is pressed.
 
 ### Live voice actions
 
-Live mode appears only when `GNANI_API_KEY` is configured. Loading the page does not call Gnani. A request is sent only after the engineer presses **Transcribe audio**, **Transcribe update**, or **Speak summary**.
+`GNANI_API_KEY` is required for incident capture. Loading the page does not call Gnani. A request is sent only after the engineer presses **Transcribe audio**, **Transcribe update**, or **Speak summary**.
 
 1. Record audio in the app or upload a WAV file up to 30 seconds and 10 MB.
 2. Press **Transcribe audio** and review/edit the transcript.
@@ -59,10 +59,8 @@ Raw audio is held in Streamlit session memory for the request and is not written
 ```mermaid
 flowchart TD
     User[Engineer] --> UI[Streamlit UI and local sign-in]
-    UI --> Demo[Demo text capture]
     UI --> Live[Explicit Live audio action]
     Live --> Prisma[Gnani Prisma v2.5 adapter]
-    Demo --> Transcript[Incident transcript]
     Prisma --> Transcript
     Transcript --> Workflow[IncidentWorkflow]
     Workflow --> Extract[Rule-based extraction]
@@ -129,7 +127,7 @@ If the recovery code is lost, reset the local password from the project terminal
 .\.venv\Scripts\python.exe -m opsdiary.auth reset-password
 ```
 
-If the account was created by an older version without a recovery code, run this command once to set a new passphrase and issue one.
+If the account was created by an older version without a recovery code, run this command once to set a new password and issue one.
 
 The default database path is `data/opsdiary.sqlite3`. Set `OPSDIARY_DATABASE_PATH` in the process environment to use another path. Relative paths resolve from the project root. For example:
 
@@ -150,7 +148,7 @@ GNANI_TTS_VOICE=Poorvi
 GNANI_TTS_LANGUAGE=hi-en
 ```
 
-Restart Streamlit after changing the settings. Without `GNANI_API_KEY`, the mode selector contains only Demo.
+Restart Streamlit after changing the settings. Without `GNANI_API_KEY`, incident capture remains unavailable and the app explains the missing configuration.
 
 Environment variables set in the process take precedence over values in `.env`.
 
@@ -159,11 +157,11 @@ The adapter uses the documented Prisma endpoint at `https://api.vachana.ai/stt/v
 ## Data and security boundaries
 
 - The application supports one initial local account. It does not provide team accounts, roles, MFA, or a hosted identity provider.
-- New passphrases must be at least 15 characters and are stored as Argon2id hashes. The random recovery code is displayed once; SQLite stores its verifier. Login and recovery attempts are throttled after five failures for 15 minutes, with generic login errors. Sessions expire after 30 minutes idle or 8 hours total.
+- New passwords must be at least 8 characters and include an uppercase letter, a lowercase letter, a number, and a symbol. Passwords are stored as Argon2id hashes. The random recovery code is displayed once; SQLite stores its verifier. Login and recovery attempts are throttled after five failures for 15 minutes, with generic login errors. Sessions expire after 30 minutes idle or 8 hours total.
 - Incident records and Ask questions/answers are stored as plain text in local SQLite. Ask history is scoped to the signed-in local account. The Ask view shows the latest 50 exchanges; the database retains all exchanges and has no automatic retention or deletion policy.
 - SQLite is not encrypted by the application. Protect the Windows account and database file. Do not enter production credentials, customer data, or confidential incident text in this synthetic-data MVP.
 - Structured logs include stage, outcome, latency, trace ID, and selected provider metadata. They omit transcript and audio content, API keys, and exception messages.
-- Demo and local Ask do not make provider calls. Live audio and text are sent to Gnani only after the corresponding explicit action.
+- Seeded history, evaluation, and local Ask do not make provider calls. Recorded audio and text are sent to Gnani only after the corresponding explicit action.
 - The History page displays at most the latest 100 incidents. Ask's local FTS5 search can retrieve up to five matching records per question.
 - Bundled runbook examples are synthetic and are not approved operational instructions.
 - The app binds to loopback. Do not expose the Streamlit server directly to a network.
@@ -195,6 +193,7 @@ GitHub Actions runs Ruff, pip-audit, the unit/mocked API tests, and the syntheti
 ```text
 app.py                         Streamlit pages and UI actions
 opsdiary/auth.py               Local account and recovery handling
+opsdiary/password_form.py      Live password checklist and account form controls
 opsdiary/assistant.py          Fixed FAQ rules and local Ask search
 opsdiary/extraction.py         Rule-based candidate extraction
 opsdiary/schema.py             Pydantic incident validation

@@ -68,7 +68,7 @@ def _faq_reply(normalized: str) -> AssistantReply | None:
     if any(term in normalized.split() for term in {"credit", "credits", "quota"}) or "api call" in normalized:
         return AssistantReply(
             "Ask aur local history search koi AI, Prisma, ya Timbre request nahi bhejte; inka Gnani credit use zero hai. "
-            "Credits sirf Live mode ke explicit Transcribe, Transcribe update, ya Speak action par lag sakte hain.",
+            "Credits sirf GNANI_API_KEY configured hone par Transcribe audio, Transcribe update, ya Speak summary button dabane par lag sakte hain.",
             "credit_usage",
             "local-faq",
             [],
@@ -92,8 +92,8 @@ def _faq_reply(normalized: str) -> AssistantReply | None:
         )
     if normalized in {"how do i record an incident", "incident kaise save karu", "how to save incident"}:
         return AssistantReply(
-            "Incident tab mein synthetic note likho ya Live mode mein short clip transcribe karo; "
-            "fields review/edit karke hi Save incident dabao.",
+            "Incident tab mein synthetic Hinglish clip record ya WAV upload karo, Transcribe audio dabao, "
+            "transcript review karo, phir fields extract/edit karke incident save karo.",
             "incident_workflow",
             "local-faq",
             [],

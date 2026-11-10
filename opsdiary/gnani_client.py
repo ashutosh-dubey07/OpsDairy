@@ -1,7 +1,7 @@
-"""Prepared Prisma v2.5 and Timbre v2.5 REST integrations.
+"""Prisma v2.5 and Timbre v2.5 REST integrations.
 
-Nothing in this module runs at import time. The local demo does not call these
-functions; invoke them only after live API mode is explicitly wired and enabled.
+Nothing in this module makes a request at import time. The Streamlit UI calls
+these functions only after the operator explicitly chooses a live action.
 """
 
 from io import BytesIO
