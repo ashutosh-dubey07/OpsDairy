@@ -50,6 +50,8 @@ def init_db(db_path: Path | str = DATABASE_PATH) -> None:
                 f"Database schema version {current_version} is newer than this "
                 f"application supports ({DATABASE_SCHEMA_VERSION})."
             )
+        if current_version == DATABASE_SCHEMA_VERSION:
+            return
         conn.executescript(
             """
             BEGIN IMMEDIATE;
@@ -407,7 +409,7 @@ def save_assistant_interaction(
     if not isinstance(evidence, list) or len(evidence) > 20:
         raise ValueError("Evidence must be a list of at most 20 references.")
 
-    interaction_id = f"ASK-{uuid4().hex[:12].upper()}"
+    interaction_id = f"ASK-{uuid4().hex.upper()}"
     with connect(db_path) as conn:
         conn.execute(
             """INSERT INTO assistant_interactions
@@ -472,7 +474,7 @@ def add_incident_event(
     trace_id: str,
     db_path: Path | str = DATABASE_PATH,
 ) -> str:
-    event_id = f"EVT-{uuid4().hex[:10].upper()}"
+    event_id = f"EVT-{uuid4().hex.upper()}"
     with connect(db_path) as conn:
         conn.execute(
             """INSERT INTO incident_events
@@ -524,7 +526,7 @@ def save_incident(
     source: str = "local-demo",
     review_audit: dict | None = None,
 ) -> str:
-    incident_id = f"INC-{uuid4().hex[:8].upper()}"
+    incident_id = f"INC-{uuid4().hex.upper()}"
     created_at = _iso(utc_now())
     service_id = draft.get("service_id")
     environment = draft.get("environment")

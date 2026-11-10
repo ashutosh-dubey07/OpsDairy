@@ -11,7 +11,7 @@ The project is an MVP for the Gnani AI Great Indian AI Internship Challenge. Inc
 | Local incident flow | Live voice capture, transcript review, extraction, saving, enrichment, history, timeline, and reports are implemented. |
 | Ask | Fixed FAQs and local FTS5 incident search are implemented. Questions and answers are saved in SQLite. |
 | Authentication | One local account, Argon2id password hashes, offline recovery code, throttling, and expiring sessions are implemented. |
-| Gnani integration | Prisma v2.5 and Timbre v2.5 adapters and explicit UI actions are implemented. Repository verification uses mocked provider responses; it does not establish live API behavior. |
+| Gnani integration | Prisma v2.5 and Timbre v2.5 adapters and explicit UI actions are implemented. A live synthetic voice smoke check confirmed basic endpoint connectivity; Prisma recognition was partial and does not establish Hinglish accuracy or production reliability. |
 | CI | Lint, dependency audit, unit/UI tests, and synthetic evaluation are configured. CI does not deploy the app. |
 | Deployment posture | Local single-user MVP. It is not ready for network or production deployment. |
 
@@ -52,7 +52,7 @@ There is no Demo capture mode. The bundled incidents and evaluation transcripts 
 4. Press **Speak summary** to request Timbre speech and play the returned WAV.
 5. In an incident timeline, record or upload a short update, explicitly transcribe it, review the text, select the event type, and save it.
 
-Raw audio is held in Streamlit session memory for the request and is not written to disk by the app. Live audio is sent to Gnani after the explicit action. Provider contract tests are mocked; live calls have not been validated with this account's credentials. Live actions may consume credits.
+Raw audio is held in Streamlit session memory for the request and is not written to disk by the app. Live audio is sent to Gnani after the explicit action. Provider contract tests are mocked. On 2026-11-10, one synthetic TTS-generated WAV completed a live Timbre response and a live Prisma transcription; the transcript was partial. This confirms basic connectivity and response handling only, not microphone hardware, Hinglish accuracy, or production reliability. Live actions may consume credits and are not retried automatically.
 
 ## Architecture
 
@@ -164,7 +164,8 @@ The adapter uses the documented Prisma endpoint at `https://api.vachana.ai/stt/v
 - Seeded history, evaluation, and local Ask do not make provider calls. Recorded audio and text are sent to Gnani only after the corresponding explicit action.
 - The History page displays at most the latest 100 incidents. Ask's local FTS5 search can retrieve up to five matching records per question.
 - Bundled runbook examples are synthetic and are not approved operational instructions.
-- The app binds to loopback. Do not expose the Streamlit server directly to a network.
+- The app binds to loopback, enables Streamlit CORS and XSRF checks, limits uploads to 10 MB, and caps WebSocket messages at 12 MB. Do not expose the Streamlit server directly to a network.
+- The local .env file is ignored by Git; use a secret manager for any future hosted deployment.
 
 ## Verification
 
@@ -184,9 +185,17 @@ Run the same local checks used by CI:
 .\.venv\Scripts\python.exe -m opsdiary.feedback
 ```
 
-The tests cover authentication, schema upgrades, extraction, retrieval, workflow, UI behavior, observability, and mocked Prisma/Timbre request contracts. They do not call Gnani. The synthetic evaluation uses 17 bundled cases and checks extraction fields and evidence coverage; it is not a measure of production accuracy. The feedback command summarizes operator corrections without printing transcript text or training the extractor. `pip-audit` needs access to PyPI vulnerability data; it does not contact Gnani.
+The tests cover authentication, schema upgrades, concurrent SQLite reads/writes, extraction, retrieval, workflow, UI behavior, observability, and mocked Prisma/Timbre request contracts. They do not call Gnani. The synthetic evaluation uses 17 bundled cases and checks extraction fields and evidence coverage; it is not a measure of production accuracy. The feedback command summarizes operator corrections without printing transcript text or training the extractor. `pip-audit` needs access to PyPI vulnerability data; it does not contact Gnani.
 
 GitHub Actions runs Ruff, pip-audit, the unit/mocked API tests, and the synthetic evaluation on pushes and pull requests. Dependabot proposes weekly package and GitHub Actions updates. CI does not deploy the app and has no Gnani credentials.
+
+## Capacity and scale boundary
+
+A local synthetic SQLite check on 2026-11-10 completed 600 mixed operations with 24 worker threads (450 incident writes and 150 reads) in 8.416 seconds, about 53.5 writes/second, with no database errors. It used a temporary database and synthetic records. This is a storage-layer smoke benchmark on one Windows workstation, not an application-session, provider-throughput, or production-capacity result.
+
+OpsDiary currently supports one local account, one Streamlit process, and one SQLite database file. Do not add app replicas or share this SQLite file over a network filesystem. The current benchmark does not establish a supported client count.
+
+Before team access, the scale path is: OIDC identity and tenant/role checks; tenant ownership on every incident, event, and Ask record; PostgreSQL with connection pooling and migrations; then a stateless API tier and bounded voice workers with per-tenant rate limits, back-pressure, request IDs, and explicit credit budgets. Billable STT/TTS calls should not be retried blindly. Keep audio in memory unless a separately reviewed retention design permits otherwise. Add staging and a deployment target before creating a CD workflow.
 
 ## Project layout
 
@@ -216,4 +225,4 @@ tests/                         Unit, UI, workflow, and mocked API checks
 
 ## Current limitations
 
-This is a challenge MVP for local evaluation. Its evaluation data, service catalog, incidents, and runbook examples are synthetic. FTS5 performs lexical matching; it does not infer semantic similarity, causality, remediation, or outage probability. Live Gnani integrations have mocked contract coverage but have not been validated against an account with credentials. Production use would require a reviewed multi-user identity boundary, encryption at rest, backup and retention policies, deployment-specific threat review, monitoring, and operational runbooks.
+This is a challenge MVP for local evaluation. Its evaluation data, service catalog, incidents, and runbook examples are synthetic. FTS5 performs lexical matching; it does not infer semantic similarity, causality, remediation, or outage probability. Live Gnani smoke testing used one synthetic TTS-generated clip and confirmed basic endpoint connectivity; STT recognition was partial. It is not an accuracy or production-readiness claim. Production use would require a reviewed multi-user identity boundary, encryption at rest, backup and retention policies, deployment-specific threat review, monitoring, and operational runbooks.

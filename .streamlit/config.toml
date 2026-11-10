@@ -9,4 +9,7 @@ font = "sans serif"
 [server]
 headless = true
 maxUploadSize = 10
+maxMessageSize = 12
 address = "127.0.0.1"
+enableCORS = true
+enableXsrfProtection = true

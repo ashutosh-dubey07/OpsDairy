@@ -38,7 +38,21 @@ Ask tab
 | Ask | Fixed answers for greetings and common questions; local FTS5 search for other queries | Ask does not call an LLM, Prisma, or Timbre. Every submitted question and answer is stored locally, scoped to the signed-in account. |
 | Persistence | SQLite stores incidents, review audit data, service and deployment fixtures, timeline events, runbooks, Ask exchanges, authentication state, and FTS indexes | Bundled records are synthetic. The database is local and is not encrypted by the app. |
 | Observability | Structured stage logs include trace ID, outcome, latency, request ID, and byte counts | Logs omit transcripts, audio bytes, passwords, API keys, and provider exception text. |
-| Quality | Unit and workflow tests, mocked provider-contract tests, synthetic extraction evaluation, Ruff, and CI dependency audit | Verification uses synthetic fixtures and mocked API responses; it does not prove live account access or production readiness. |
+| Quality | Unit/workflow tests, mocked provider-contract tests, concurrent SQLite regression, synthetic extraction evaluation, Ruff, and CI dependency audit | One live synthetic TTS-to-STT smoke check confirms basic connectivity only; it does not prove recognition accuracy, provider capacity, or production readiness. |
+
+## Client scale and delivery boundary
+
+Current operation is intentionally one local account, one Streamlit process, one SQLite file, and loopback-only access. The synthetic storage check measured 600 mixed SQLite operations with 24 worker threads and no database errors; it is a local storage datapoint, not a supported concurrent-user target. SQLite still serializes writes, and the data model does not enforce tenant boundaries.
+
+Do not scale this deployment by adding Streamlit replicas or placing the SQLite file on shared storage. A team rollout needs these changes in order:
+
+1. Add OIDC login, roles, tenant IDs, and authorization checks at every workflow and database boundary. Enforce tenant ownership in SQL and PostgreSQL row-level policies; test cross-tenant isolation.
+2. Move operational records to PostgreSQL, add versioned migrations, connection pooling, backups, restore drills, retention, and encryption at rest.
+3. Put a stateless API behind a TLS-terminating reverse proxy. Keep Streamlit as an internal UI only if its session model fits the deployment.
+4. Isolate Prisma/Timbre calls behind bounded workers. Apply per-tenant concurrency/rate limits, explicit credit budgets, deadlines, idempotency keys, and back-pressure. Do not automatically retry billable requests. Audio remains in memory and is not put on a durable queue.
+5. Observe request rates, queue depth, p50/p95 latency, failures, and provider spend without logging transcripts, audio, passwords, or keys.
+
+The current CI pipeline runs Ruff, a dependency vulnerability audit, the unit/UI and mocked-provider suite, and synthetic extraction gates on pushes and pull requests. The concurrent SQLite regression is part of the unit suite. There is no CD workflow because no hosting target, identity provider, TLS domain, secret manager, or backup environment has been approved and configured. Once a target exists, add staging deployment, migration checks, smoke tests, health monitoring, manual promotion, and rollback.
 
 ## Scope and operational limits
 
