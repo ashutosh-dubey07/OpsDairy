@@ -83,6 +83,22 @@ class GnaniClientContractTests(unittest.TestCase):
         self.assertEqual(audio, response.content)
 
     @patch("opsdiary.gnani_client.requests.post")
+    def test_timbre_repairs_streaming_wav_size_placeholders(self, post: Mock) -> None:
+        response = Mock()
+        streaming_wav = bytearray(make_wav(1, sample_rate=48000))
+        streaming_wav[4:8] = (0xFFFFFFFF).to_bytes(4, "little")
+        streaming_wav[40:44] = (0xFFFFFFFF).to_bytes(4, "little")
+        response.content = bytes(streaming_wav)
+        response.headers = {"Content-Type": "audio/wav"}
+        post.return_value = response
+
+        audio = gnani_client.synthesize_timbre_v25("Synthetic test", api_key="mock-key")
+
+        self.assertEqual(int.from_bytes(audio[4:8], "little"), len(audio) - 8)
+        self.assertEqual(int.from_bytes(audio[40:44], "little"), len(audio) - 44)
+        self.assertEqual(gnani_client.wav_duration_seconds(audio), 1)
+
+    @patch("opsdiary.gnani_client.requests.post")
     def test_timbre_rejects_non_wav_response(self, post: Mock) -> None:
         response = Mock()
         response.content = b'{"success":false}'

@@ -74,6 +74,36 @@ def wav_duration_seconds(audio_bytes: bytes) -> float:
         raise ValueError("Use a valid WAV recording for the live microphone/upload flow.") from exc
 
 
+def _normalize_wav_container_sizes(audio_bytes: bytes) -> bytes:
+    """Replace streaming WAV size sentinels with sizes for the returned bytes."""
+    if len(audio_bytes) < 12 or audio_bytes[:4] != b"RIFF" or audio_bytes[8:12] != b"WAVE":
+        return audio_bytes
+
+    unknown_size = 0xFFFFFFFF
+    normalized = bytearray(audio_bytes)
+    riff_size = int.from_bytes(normalized[4:8], "little")
+    if riff_size == unknown_size and len(normalized) - 8 <= unknown_size:
+        normalized[4:8] = (len(normalized) - 8).to_bytes(4, "little")
+
+    offset = 12
+    while offset + 8 <= len(normalized):
+        chunk_id = normalized[offset : offset + 4]
+        chunk_size = int.from_bytes(normalized[offset + 4 : offset + 8], "little")
+        data_offset = offset + 8
+        if chunk_size == unknown_size:
+            if chunk_id == b"data":
+                actual_size = len(normalized) - data_offset
+                if actual_size <= unknown_size:
+                    normalized[offset + 4 : offset + 8] = actual_size.to_bytes(4, "little")
+            break
+        next_offset = data_offset + chunk_size + (chunk_size & 1)
+        if next_offset > len(normalized):
+            break
+        offset = next_offset
+
+    return bytes(normalized)
+
+
 def validate_wav_duration(
     audio_bytes: bytes,
     max_seconds: int = MAX_STT_AUDIO_SECONDS,
@@ -217,6 +247,6 @@ def synthesize_timbre_v25(
         raise GnaniAPIError(
             f"Timbre v2.5 returned a non-WAV response ({content_type or 'empty'}); expected audio/wav."
         )
-    audio_bytes = response.content
+    audio_bytes = _normalize_wav_container_sizes(response.content)
     _validate_timbre_wav(audio_bytes)
     return audio_bytes
