@@ -116,7 +116,7 @@ Requirements: Python 3.12 and [uv](https://docs.astral.sh/uv/). Commands below u
 ```powershell
 uv venv .venv --python 3.12
 uv pip install --python .venv\Scripts\python.exe -r requirements.txt
-.\.venv\Scripts\streamlit.exe run app.py
+.\.venv\Scripts\python.exe -m streamlit run app.py
 ```
 
 Open the local URL printed by Streamlit. `.streamlit/config.toml` binds the server to `127.0.0.1` and limits uploads to 10 MB. On a new database, register one local account. Registration displays a one-time recovery code; save it offline. Existing databases require the account's normal sign-in.
